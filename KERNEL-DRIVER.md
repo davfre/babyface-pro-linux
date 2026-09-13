@@ -211,6 +211,37 @@ first-impulse method.)  Full sweep `tools/kernel/latency-sweep.sh`:
      validated: round-trip via `amixer` (including a negative dB
      value), no dmesg errors, correct persistence across unbind/rebind.
      `sh selftests.sh`: laws + module build + `checkpatch` all pass.
+     **Limitation (1) turned out to be a real bug, fixed 2026-09-13**:
+     because the two per-channel controls tracked `chip->trim[]`
+     independently, `bf_state_apply_flags` - which replays a pair from
+     its EVEN index - replayed the wrong value whenever the user had
+     set trim on the ODD channel (AN2 or AN4). Reproduced on hardware
+     with a temporary `dev_info` in `bf_trim_apply` (same technique as
+     the 2026-09-07 phantom root-cause): set `AN2 Trim Volume = -12`,
+     unbind/rebind, and the trace showed `apply mic=0 trim_db2=0` with
+     the cache holding `[0,-12,0,0]` - i.e. the -12 dB was silently
+     dropped on the wire while the control still claimed it. Note the
+     ALSA controls CANNOT reveal this: they read back from the cache,
+     which was always restored correctly; only the wire write was
+     wrong. Fixed by making `bf_trim_put` mirror the value into both
+     entries of the pair and `snd_ctl_notify` the sibling control (new
+     `chip->trim_kctl[4]`, same idiom as `panel_kctl`), so the cache
+     can no longer claim a per-channel split the hardware cannot
+     represent. Re-verified with the same trace on the fixed build:
+     `apply mic=0 trim_db2=-24 cache=[-12,-12,0,0]` after rebind, both
+     controls reading -12, dmesg clean. Trace removed afterwards.
+   - **dB TLV metadata added 2026-09-13** on the three volume families
+     that lacked it (only the 6 output masters had any): the 84
+     crosspoints (`DECLARE_TLV_DB_LINEAR(TLV_DB_GAIN_MUTE, 600)` - the
+     fader law is exactly linear in amplitude, `BF_FADER_TOP` = 0x2d41
+     = 2 x `BF_FADER_0DB` = 0x16a0, so +6 dB), the 4 preamp gains and
+     the 4 trims (`DECLARE_TLV_DB_SCALE`, both controls' values already
+     being dB). Verified live: `amixer cget` reports
+     `access=rw---R--` with `dBscale-min=0.00dB,step=1.00dB` (gain),
+     `dBscale-min=-65.00dB` (trim) and `dBlinear-...,max=6.00dB`
+     (crosspoints). FX Send deliberately has no TLV: its level law was
+     never calibrated to dB (PROTOCOL.md only records "a level
+     sweep").
 4. **Front panel** — DONE (2026-08-26, `panel.c`): the 0x17 readback is
    polled at 50 Hz in a delayed_work and mirrored into read-only ALSA
    controls (Front Panel Button/Wheel/In/Out/Mix/Dim).  What remains:
@@ -268,7 +299,32 @@ first-impulse method.)  Full sweep `tools/kernel/latency-sweep.sh`:
    linux-sound/linux-usb. Optionally ask RME for protocol docs
    (clean-room RE is fine, vendor input de-risks the rest).
 8. **Automated regression suite (2026-08-25, `tools/kernel/regress.sh`
-   + `pcmxrun.c`)**: full-duplex sweep (9 rates × periods ≥
+   + `pcmxrun.c`)**.
+   **IMPORTANT (found 2026-09-13): the suite was silently unrunnable
+   from 2026-09-01 to 2026-09-13.** The v2-review fix that switched the
+   PCM from S24_LE to S32_LE (`db15277`) never touched the test
+   tooling, which kept asking the driver for S24_LE on a `hw:` device -
+   a format it no longer accepts. The failure did not look like a
+   format error: `regress.sh`'s device-busy probe is itself an `aplay
+   -f S24_LE`, so the suite aborted with "FATAL: hw:0,0 still busy
+   after destroying the RME nodes", which reads as a PipeWire problem.
+   Fixed 2026-09-13 across `regress.sh` (4 aplay/arecord call sites),
+   `pcmxrun.c` and `looplat.c`. The scaling constants had to move with
+   the format: S24_LE is 24 bits RIGHT-justified in 4 bytes (full scale
+   2^23) while S32_LE with 24 msbits is LEFT-justified (full scale
+   2^31), so `pcmxrun`'s tone amplitude and its dBFS divisor both
+   became 2^31, and `looplat`'s impulse/threshold constants went
+   0x400000 -> 0x40000000. Confirmation the conversion is right: the
+   signal tap reads -24.1 dB again, exactly the historical baseline.
+   **Consequence for the RFC: the "40/40" figure quoted in
+   UPSTREAM.md and in the v1/v2/v3 cover letters predates the S32_LE
+   switch** - the suite had never been run against the code actually
+   submitted as v3, nor against the 5 controls added 2026-09-06. It
+   has now: 40 pass / 0 fail on 2026-09-13 (`--dur 1 --mixer-restore
+   --disconnect-test`), covering the 9 rates x 4 periods sweep, 30
+   start/stop cycles, mixer-cache restore across unbind/rebind and a
+   mid-stream disconnect.
+   What it does: full-duplex sweep (9 rates × periods ≥
    max(fpu,32)) with a mic-free signal-integrity check (the device
    playback-tap on capture ch10/11), start/stop stress, and
    --mixer-restore (48V+gain survive unbind/rebind).  It caught two

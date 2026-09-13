@@ -131,8 +131,9 @@ step).
    the preamp readback byte0 index semantics (0x003F vs 0x0000), the
    width strip-ownership tail (cap_width7 family), and the EQ HF warp.
    (The ref-level 3-state map was FULLY DECODED 2026-08-26 — see
-   LINUX-VALIDATION.md — and the driver forces the +4dBu default; it
-   just isn't exposed as a control.)
+   LINUX-VALIDATION.md. It is now exposed as the `Instrument Ref Level`
+   enum too, added 2026-09-06 — this note used to say "just isn't
+   exposed as a control", which went stale that day.)
 6. **Device naming**: the module/card name is `Babyface Pro FS`
    (the FS suffix matters — the non-FS unit has a different PID).
 7. **linux-next compile test + get_maintainer.pl** — DONE 2026-08-28,
@@ -172,6 +173,47 @@ step).
    Jaroslav Kysela <perex@perex.cz>, Takashi Iwai <tiwai@suse.com>,
    linux-sound@vger.kernel.org, linux-kernel@vger.kernel.org. Re-run
    before actually mailing — MAINTAINERS entries can change.
+
+## v4 (not sent yet - what has accumulated since v3)
+
+v3 went out 2026-09-02 (4 patches + cover letter, archived on
+lore/linux-sound). No reviewer reply as of 2026-09-13. Meanwhile the
+tree has moved ahead of what is on the list, so a v4 is owed
+regardless of whether a review arrives:
+
+- **5 new controls** (2026-09-06, `c72cfaf` + `77dcf1a`): Sample Clock
+  Source, Instrument Ref Level, Phase Switch, Stereo Split Switch,
+  Input Trim. None of these have ever been posted for review.
+- **Input Trim restore bug** found and fixed 2026-09-13 (odd channel of
+  a pair replayed the wrong value on the wire after a re-probe) - see
+  KERNEL-DRIVER.md known-gap 3 for the hardware trace.
+- **dB TLV** added on crosspoints / preamp gains / trims 2026-09-13
+  (previously only the 6 masters had any).
+- **The regression suite was unrunnable from 2026-09-01 to 2026-09-13**
+  (the S24_LE -> S32_LE switch never reached the test tooling). Fixed,
+  and the suite re-run on the current code: **40 pass / 0 fail**
+  (2026-09-13). Until then the "40/40" claim in the cover letters was
+  inherited from before the S32_LE change - worth keeping in mind if a
+  reviewer asks what exactly was validated on which revision.
+- **Style regressions in the post-v3 code cleaned up** 2026-09-13:
+  2 non-ASCII characters had crept back into comments (Takashi asked
+  for plain ASCII in the v2 review), plus 13 alignment CHECKs and one
+  over-long line. Back to the 4 known checkpatch --strict false
+  positives; sparse C=2 and W=1 clean.
+
+Two things to fix in the v4 cover letter itself:
+
+- The v3 cover contradicts itself: the changelog announces the S24_LE
+  -> S32_LE switch, then the "What's included" block a few lines down
+  still says S24_LE. Fixed in the repo by `d4ac3bf`, never on the list.
+- It needs a proper v3 -> v4 changelog listing the 5 new controls, so
+  a reviewer coming to v4 cold isn't surprised by unreviewed code.
+
+Regeneration prerequisite: `~/DATA/05_Code/linux-next-src` is stale -
+it still sits on the single-patch v1 commit (2026-08-29, linux-next
+20260828) and its copies of `sound/usb/babyfacepro/*.c` no longer match
+this repo. Pull a fresh linux-next, re-copy the sources, rebuild
+in-tree, then `git format-patch` the series again.
 
 ## Cover letter
 
