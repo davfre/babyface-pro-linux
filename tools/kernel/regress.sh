@@ -49,7 +49,7 @@ DIR="$(cd "$(dirname "$0")" && pwd)"
 BIN="${TMPDIR:-/tmp}/pcmxrun"
 [ -x "$BIN" ] || gcc -O2 -o "$BIN" "$DIR/pcmxrun.c" -lasound -lm -lpthread || exit 1
 
-# 0.1 s of S24_LE 2ch 48k silence for the busy-check and the stress loop
+# 0.1 s of S32_LE 2ch 48k silence for the busy-check and the stress loop
 # (aplay -d takes only integer seconds, so the FILE carries the short length).
 SIL="${TMPDIR:-/tmp}/bf_sil.raw"
 [ -f "$SIL" ] || dd if=/dev/zero of="$SIL" bs=38400 count=1 2>/dev/null
@@ -71,7 +71,7 @@ for o in d:
 "
 }
 free_check() {
-	timeout 3 aplay -q -D "hw:$CARD,0" -f S24_LE -c 2 -r 48000 \
+	timeout 3 aplay -q -D "hw:$CARD,0" -f S32_LE -c 2 -r 48000 \
 		--period-size=256 --buffer-size=512 -d 1 "$SIL" >/dev/null 2>&1
 }
 if ! free_check; then
@@ -140,7 +140,7 @@ echo "-- start/stop stress: 30 x (open/arm/start/stop/close) @48k period 256 --"
 SFAIL=0
 i=0
 while [ $i -lt 30 ]; do
-	if ! aplay -q -D "hw:$CARD,0" -f S24_LE -c 2 -r 48000 \
+	if ! aplay -q -D "hw:$CARD,0" -f S32_LE -c 2 -r 48000 \
 	     --period-size=256 --buffer-size=512 -d 1 "$SIL" 2>/dev/null; then
 		SFAIL=$((SFAIL + 1))
 	fi
@@ -200,7 +200,7 @@ if [ "$DISCONNECT" = 1 ]; then
 	DEV=$(bf_dev)
 	if [ -n "$DEV" ]; then
 		echo "-- disconnect mid-stream: unbind while arecord holds hw:$CARD,0 --"
-		(timeout 25 arecord -D "hw:$CARD,0" -f S24_LE -c 2 -r 48000 \
+		(timeout 25 arecord -D "hw:$CARD,0" -f S32_LE -c 2 -r 48000 \
 			--period-size=256 --buffer-size=512 -d 20 /tmp/bf_disc.wav \
 			2>/dev/null; echo "rc=$?" >/tmp/bf_disc_rc) &
 		sleep 3
@@ -221,7 +221,7 @@ if [ "$DISCONNECT" = 1 ]; then
 		# Rebind and verify the card + audio come back.
 		echo "$DEV" | sudo tee "/sys/bus/usb/drivers/snd-usb-babyface-pro/bind" >/dev/null
 		sleep 3
-		if timeout 3 aplay -q -D "hw:$CARD,0" -f S24_LE -c 2 -r 48000 \
+		if timeout 3 aplay -q -D "hw:$CARD,0" -f S32_LE -c 2 -r 48000 \
 		     --period-size=256 --buffer-size=512 -d 1 "$SIL" 2>/dev/null; then
 			PASS=$((PASS + 1)); echo "  PASS  rebind: card + audio back"
 		else

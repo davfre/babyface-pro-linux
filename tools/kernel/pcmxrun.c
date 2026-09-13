@@ -40,7 +40,9 @@ static long tap_n = 0;
 static void gen(snd_pcm_uframes_t frames, int ch, int32_t *buf)
 {
 	static double phase = 0.0;
-	const double amp = (1 << 23) * 0.125;	/* -18 dBFS */
+	/* S32_LE with 24 msbits: the valid bits are LEFT-justified, so
+	 * full scale is 2^31, not 2^23 as it was under S24_LE. */
+	const double amp = 2147483648.0 * 0.125;	/* -18 dBFS */
 	const double step = 2.0 * M_PI * 440.0 / (double)rate;
 	for (snd_pcm_uframes_t i = 0; i < frames; i++) {
 		int32_t v = (int32_t)(amp * sin(phase));
@@ -138,7 +140,7 @@ int main(int argc, char **argv)
 
 	snd_pcm_hw_params_any(pb, hp);
 	snd_pcm_hw_params_set_access(pb, hp, SND_PCM_ACCESS_RW_INTERLEAVED);
-	snd_pcm_hw_params_set_format(pb, hp, SND_PCM_FORMAT_S24_LE);
+	snd_pcm_hw_params_set_format(pb, hp, SND_PCM_FORMAT_S32_LE);
 	snd_pcm_hw_params_set_channels(pb, hp, pb_ch);
 	snd_pcm_hw_params_set_rate(pb, hp, rate, 0);
 	snd_pcm_hw_params_set_period_size(pb, hp, period, 0);
@@ -148,7 +150,7 @@ int main(int argc, char **argv)
 
 	snd_pcm_hw_params_any(cap, hp);
 	snd_pcm_hw_params_set_access(cap, hp, SND_PCM_ACCESS_RW_INTERLEAVED);
-	snd_pcm_hw_params_set_format(cap, hp, SND_PCM_FORMAT_S24_LE);
+	snd_pcm_hw_params_set_format(cap, hp, SND_PCM_FORMAT_S32_LE);
 	snd_pcm_hw_params_set_channels(cap, hp, cap_ch);
 	snd_pcm_hw_params_set_rate(cap, hp, rate, 0);
 	snd_pcm_hw_params_set_period_size(cap, hp, period, 0);
@@ -206,7 +208,7 @@ int main(int argc, char **argv)
 
 	double tap_db = -INFINITY;
 	if (tap_n > 0)
-		tap_db = 20.0 * log10(sqrt(tap_sum / tap_n) / (1 << 23));
+		tap_db = 20.0 * log10(sqrt(tap_sum / tap_n) / 2147483648.0);
 
 	int pass = (err_count == 0 && pb_xruns == 0 && cap_xruns == 0) &&
 		   (!tap_ok || tap_db > -55.0);

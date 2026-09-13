@@ -65,7 +65,7 @@ int main(int argc, char **argv)
 
 	snd_pcm_hw_params_any(pb, hp);
 	snd_pcm_hw_params_set_access(pb, hp, SND_PCM_ACCESS_RW_INTERLEAVED);
-	snd_pcm_hw_params_set_format(pb, hp, SND_PCM_FORMAT_S24_LE);
+	snd_pcm_hw_params_set_format(pb, hp, SND_PCM_FORMAT_S32_LE);
 	snd_pcm_hw_params_set_channels(pb, hp, pb_ch);
 	snd_pcm_hw_params_set_rate(pb, hp, rate, 0);
 	snd_pcm_hw_params_set_period_size(pb, hp, period, 0);
@@ -75,7 +75,7 @@ int main(int argc, char **argv)
 
 	snd_pcm_hw_params_any(cap, hp);
 	snd_pcm_hw_params_set_access(cap, hp, SND_PCM_ACCESS_RW_INTERLEAVED);
-	snd_pcm_hw_params_set_format(cap, hp, SND_PCM_FORMAT_S24_LE);
+	snd_pcm_hw_params_set_format(cap, hp, SND_PCM_FORMAT_S32_LE);
 	snd_pcm_hw_params_set_channels(cap, hp, cap_ch);
 	snd_pcm_hw_params_set_rate(cap, hp, rate, 0);
 	snd_pcm_hw_params_set_period_size(cap, hp, period, 0);
@@ -91,7 +91,7 @@ int main(int argc, char **argv)
 	for (int i = 0; i < (int)buffer; i++)
 		if ((i % 4800) < 60)
 			for (int c = 0; c < pb_ch && c < 2; c++)
-				pbuf[i * pb_ch + c] = 0x400000;
+				pbuf[i * pb_ch + c] = 0x40000000;
 
 	/* Linked start: both streams trigger on the same device frame.
 	 * The prefill above may already have auto-started the linked pair
@@ -155,7 +155,7 @@ int main(int argc, char **argv)
 		}
 		for (int i = 0; i < r; i++) {
 			int32_t v = cbuf[i * cap_ch + 10];	/* word 12 = ch10 */
-			/* The tap echoes the impulse ~27 dB down (0x400000 -> ~0x01C000),
+			/* The tap echoes the impulse ~27 dB down (0x40000000 -> ~0x01C00000),
 			 * so the old threshold 0x400000/2 never matched and the first
 			 * crossing found was a spurious one.  Use 1/64 — the noise
 			 * floor is far below.
@@ -167,7 +167,7 @@ int main(int argc, char **argv)
 			 * loopback latency is the small-period value: 42 frames
 			 * (0.88 ms).  For the large periods, subtract the pre-arm
 			 * backlog (8 * frames_per_urb). */
-			if (first < 0 && abs(v) > 0x400000 / 64)
+			if (first < 0 && abs(v) > 0x40000000 / 64)
 				first = frame + i;
 		}
 		frame += r;
