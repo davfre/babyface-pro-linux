@@ -533,7 +533,7 @@ out:
 	return ret;
 }
 
-/* Phase Ø invert (AN1-4 only, PROTOCOL.md "Phase Ø toggle",
+/* Phase (polarity) invert (AN1-4 only, PROTOCOL.md "Phase toggle",
  * hardware-verified 2026-08-23): NEGATE (bitwise NOT, not two's
  * complement) the L crosspoint register on every output pair's
  * standard map, plus the AN1/2 low-map shadow specifically (the same
@@ -586,7 +586,7 @@ int bf_phase_apply(struct snd_usb_babyface *chip, int mic, bool invert)
 }
 
 static int bf_phase_info(struct snd_kcontrol *kctl,
-			  struct snd_ctl_elem_info *uinfo)
+			 struct snd_ctl_elem_info *uinfo)
 {
 	uinfo->type = SNDRV_CTL_ELEM_TYPE_BOOLEAN;
 	uinfo->count = 1;
@@ -596,7 +596,7 @@ static int bf_phase_info(struct snd_kcontrol *kctl,
 }
 
 static int bf_phase_get(struct snd_kcontrol *kctl,
-			 struct snd_ctl_elem_value *ucontrol)
+			struct snd_ctl_elem_value *ucontrol)
 {
 	struct snd_usb_babyface *chip = snd_kcontrol_chip(kctl);
 	int mic = kctl->private_value;
@@ -606,7 +606,7 @@ static int bf_phase_get(struct snd_kcontrol *kctl,
 }
 
 static int bf_phase_put(struct snd_kcontrol *kctl,
-			 struct snd_ctl_elem_value *ucontrol)
+			struct snd_ctl_elem_value *ucontrol)
 {
 	struct snd_usb_babyface *chip = snd_kcontrol_chip(kctl);
 	int mic = kctl->private_value;
@@ -664,7 +664,7 @@ int bf_split_apply(struct snd_usb_babyface *chip, int pb, bool split)
 }
 
 static int bf_split_get(struct snd_kcontrol *kctl,
-			 struct snd_ctl_elem_value *ucontrol)
+			struct snd_ctl_elem_value *ucontrol)
 {
 	struct snd_usb_babyface *chip = snd_kcontrol_chip(kctl);
 	int pb = kctl->private_value;
@@ -674,7 +674,7 @@ static int bf_split_get(struct snd_kcontrol *kctl,
 }
 
 static int bf_split_put(struct snd_kcontrol *kctl,
-			 struct snd_ctl_elem_value *ucontrol)
+			struct snd_ctl_elem_value *ucontrol)
 {
 	struct snd_usb_babyface *chip = snd_kcontrol_chip(kctl);
 	int pb = kctl->private_value;
@@ -1127,13 +1127,13 @@ static const char *const bf_clock_texts[] = {
 };
 
 static int bf_clock_info(struct snd_kcontrol *kctl,
-			  struct snd_ctl_elem_info *uinfo)
+			 struct snd_ctl_elem_info *uinfo)
 {
 	return snd_ctl_enum_info(uinfo, 1, 2, bf_clock_texts);
 }
 
 static int bf_clock_get(struct snd_kcontrol *kctl,
-			 struct snd_ctl_elem_value *ucontrol)
+			struct snd_ctl_elem_value *ucontrol)
 {
 	struct snd_usb_babyface *chip = snd_kcontrol_chip(kctl);
 
@@ -1142,7 +1142,7 @@ static int bf_clock_get(struct snd_kcontrol *kctl,
 }
 
 static int bf_clock_put(struct snd_kcontrol *kctl,
-			 struct snd_ctl_elem_value *ucontrol)
+			struct snd_ctl_elem_value *ucontrol)
 {
 	struct snd_usb_babyface *chip = snd_kcontrol_chip(kctl);
 	bool optical = ucontrol->value.enumerated.item[0] != 0;
@@ -1633,13 +1633,13 @@ static const char *const bf_reflevel_texts[] = {
 };
 
 static int bf_reflevel_info(struct snd_kcontrol *kctl,
-			     struct snd_ctl_elem_info *uinfo)
+			    struct snd_ctl_elem_info *uinfo)
 {
 	return snd_ctl_enum_info(uinfo, 1, 3, bf_reflevel_texts);
 }
 
 static int bf_reflevel_get(struct snd_kcontrol *kctl,
-			    struct snd_ctl_elem_value *ucontrol)
+			   struct snd_ctl_elem_value *ucontrol)
 {
 	struct snd_usb_babyface *chip = snd_kcontrol_chip(kctl);
 
@@ -1648,7 +1648,7 @@ static int bf_reflevel_get(struct snd_kcontrol *kctl,
 }
 
 static int bf_reflevel_put(struct snd_kcontrol *kctl,
-			    struct snd_ctl_elem_value *ucontrol)
+			   struct snd_ctl_elem_value *ucontrol)
 {
 	struct snd_usb_babyface *chip = snd_kcontrol_chip(kctl);
 	unsigned int item = ucontrol->value.enumerated.item[0];

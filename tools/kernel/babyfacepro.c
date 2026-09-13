@@ -188,15 +188,15 @@ int bf_crosspoint_clear_cross(struct snd_usb_babyface *chip,
 
 	for (k = BF_CROSS_L_FIRST; k <= BF_CROSS_L_LAST; k += 2) {
 		ret = bf_vendor_write_cycle(chip, BF_REQ_CROSSPOINT, 0x0000,
-					     BF_REG_CROSS_BASE_L +
-					     BF_REG_CROSS_STRIDE * blk + k);
+					    BF_REG_CROSS_BASE_L +
+					    BF_REG_CROSS_STRIDE * blk + k);
 		if (ret < 0)
 			return ret;
 	}
 	for (k = BF_CROSS_R_FIRST; k <= BF_CROSS_R_LAST; k += 2) {
 		ret = bf_vendor_write_cycle(chip, BF_REQ_CROSSPOINT, 0x0000,
-					     BF_REG_CROSS_BASE_R +
-					     BF_REG_CROSS_STRIDE * blk + k);
+					    BF_REG_CROSS_BASE_R +
+					    BF_REG_CROSS_STRIDE * blk + k);
 		if (ret < 0)
 			return ret;
 	}

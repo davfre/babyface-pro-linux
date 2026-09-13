@@ -298,7 +298,7 @@ struct snd_usb_babyface {
 	u16 dim_saved[2];		/* pre-DIM Phones master (out 1 L/R) */
 	bool dim;			/* DIM engaged (fixed -20 dB on Phones) */
 	u16 xpoint[6][14][2];		/* cached crosspoints (out, src, L/R) */
-	bool phase[4];			/* Ø invert, AN1-4 (bf_sources idx 0-3);
+	bool phase[4];			/* polarity invert, AN1-4 (bf_sources 0-3);
 					 * xpoint[][0..3][0] stays the PLAIN
 					 * value, only the wire write is
 					 * negated - see bf_phase_put's own
@@ -325,7 +325,10 @@ struct snd_usb_babyface {
 	bool linked;			/* AN1/2 input link */
 	bool ms_proc;			/* MS processor engaged */
 	bool clock_optical;		/* clock source: false = Internal (default) */
-	int ref_level;			/* Instr 3/4 ref level, BF_REF_LEVEL_* (0 = +4dBu default) */
+	int ref_level;			/* Instr 3/4 ref level, one of the
+					 * BF_REF_LEVEL_* values
+					 * (0 = +4dBu, the default)
+					 */
 	int width;			/* width knob -100..+100 */
 	u16 fx_send;			/* FX send level 0..0x1000 */
 
