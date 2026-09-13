@@ -5,18 +5,19 @@
 # control but never acts on it: that is left to TuxMix. With the kernel
 # driver alone the button does nothing.
 #
-# This mirrors it onto two things:
+# It does have a "Dim Switch" control, but this does not use it. That
+# one writes an absolute 0x0333 (819) to the Phones master, taken from
+# a capture made with the master near unity, rather than attenuating
+# whatever is there. Below -20 dB it therefore raises the level instead
+# of lowering it, and at the driver's own -30 dB default it is a boost
+# of about 6 dB. Measured on an original Babyface Pro.
 #
-#   PH3/4  "Dim Switch", the driver's own DIM. It writes the hardware's
-#          absolute -20 dB to the Phones master and restores the
-#          previous level on release.
+# So both outputs are handled here, relative to their current level:
+# save, divide by 10 (exactly -20 dB on the linear 0x2000 = 0 dB
+# scale), restore on release.
 #
-#   AN1/2  handled here. The driver's DIM is hardcoded to output 1
-#          (Phones), because the capture it was derived from was taken
-#          with Phones selected. The main out is left alone, so this
-#          saves "AN1/2 Playback Volume", divides it by 10 (exactly
-#          -20 dB on a linear 0x2000 = 0 dB scale) and puts it back on
-#          release.
+#   AN1/2  main out, control index 0
+#   PH3/4  phones, control index 1
 #
 # Usage: bbf-dim-watch.sh [card] [--phones-only|--main-only]
 set -eu
@@ -24,99 +25,93 @@ set -eu
 CARD="${1:-BabyfacePro}"
 MODE="${2:-both}"
 
+CTL_MAIN="name=AN1/2 Playback Volume"
+CTL_PHONES="name=PH3/4 Playback Volume,index=1"
+
 die() {
 	echo "bbf-dim-watch: $*" >&2
 	exit 1
 }
 
+amixer -c "$CARD" controls >/dev/null 2>&1 || die "no such card: $CARD"
+
 need() {
-	amixer -c "$CARD" cget name="$1" >/dev/null 2>&1 ||
-		die "no '$1' control on card $CARD"
+	amixer -c "$CARD" cget "$1" >/dev/null 2>&1 || die "no control '$1' on $CARD"
+}
+need "name=Front Panel Dim"
+if [ "$MODE" != "--phones-only" ]; then need "$CTL_MAIN"; fi
+if [ "$MODE" != "--main-only" ]; then need "$CTL_PHONES"; fi
+
+# A pipeline's status is the last command's, so a failed amixer here
+# would otherwise surface as an empty string rather than an error, and
+# the caller would go on to do arithmetic on it.
+read_ctl() {
+	_v=$(amixer -c "$CARD" cget "$1" 2>/dev/null |
+		sed -n 's/^  : values=//p' | head -1)
+	[ -n "$_v" ] || die "could not read '$1' on $CARD"
+	printf '%s\n' "$_v"
 }
 
-amixer -c "$CARD" controls >/dev/null 2>&1 || die "no such card: $CARD"
+# Save once per engage: a second engage without a release in between
+# must not latch the dimmed level as the thing to restore.
+dim_one() {
+	_cur=$(read_ctl "$1")
+	_l=${_cur%%,*}
+	_r=${_cur##*,}
+	amixer -c "$CARD" -q cset "$1" "$((_l / 10)),$((_r / 10))"
+	printf '%s\n' "$_cur"
+}
+
+engage() {
+	if [ -n "$saved_main$saved_phones" ]; then
+		return 0
+	fi
+	if [ "$MODE" != "--phones-only" ]; then
+		saved_main=$(dim_one "$CTL_MAIN")
+	fi
+	if [ "$MODE" != "--main-only" ]; then
+		saved_phones=$(dim_one "$CTL_PHONES")
+	fi
+}
+
+release() {
+	if [ -n "$saved_main" ]; then
+		amixer -c "$CARD" -q cset "$CTL_MAIN" "$saved_main"
+		saved_main=''
+	fi
+	if [ -n "$saved_phones" ]; then
+		amixer -c "$CARD" -q cset "$CTL_PHONES" "$saved_phones"
+		saved_phones=''
+	fi
+}
 
 # amixer takes a bare card id or index; alsactl wants a full CTL name.
 case "$CARD" in
 *:*)	CTL="$CARD" ;;
 *)	CTL="hw:$CARD" ;;
 esac
-need 'Front Panel Dim'
-if [ "$MODE" != "--main-only" ]; then need 'Dim Switch'; fi
-if [ "$MODE" != "--phones-only" ]; then need 'AN1/2 Playback Volume'; fi
 
-# A pipeline's status is the last command's, so a failed amixer here
-# would otherwise surface as an empty string rather than an error, and
-# the caller would go on to do arithmetic on it.
-read_ctl() {
-	_v=$(amixer -c "$CARD" cget name="$1" 2>/dev/null |
-		sed -n 's/^  : values=//p' | head -1)
-	[ -n "$_v" ] || die "could not read '$1' on card $CARD"
-	printf '%s\n' "$_v"
-}
+last=$(read_ctl "name=Front Panel Dim")
 
-engage() {
-	if [ "$MODE" != "--main-only" ]; then
-		amixer -c "$CARD" -q cset name='Dim Switch' on
-	fi
-	if [ "$MODE" = "--phones-only" ]; then
-		return 0
-	fi
-	# Only save once: a restart while already dimmed must not capture
-	# the dimmed level as the thing to restore.
-	if [ -n "$saved" ]; then
-		return 0
-	fi
-	saved=$(read_ctl 'AN1/2 Playback Volume')
-	l=${saved%%,*}
-	r=${saved##*,}
-	amixer -c "$CARD" -q cset name='AN1/2 Playback Volume' \
-		"$((l / 10)),$((r / 10))"
-}
-
-release() {
-	if [ "$MODE" != "--main-only" ]; then
-		amixer -c "$CARD" -q cset name='Dim Switch' off
-	fi
-	if [ "$MODE" = "--phones-only" ]; then
-		return 0
-	fi
-	if [ -z "$saved" ]; then
-		return 0
-	fi
-	amixer -c "$CARD" -q cset name='AN1/2 Playback Volume' "$saved"
-	saved=''
-}
-
-last=$(read_ctl 'Front Panel Dim')
-
-# The loop runs in the pipeline's subshell, so 'saved' and the trap both
-# have to live in here with it.
+# The loop runs in the pipeline's subshell, so the saved levels and the
+# trap both have to live in here with it.
 alsactl monitor "$CTL" | {
-	saved=''
+	saved_main=''
+	saved_phones=''
+
 	# Without this, stopping the service while dimmed would leave the
-	# monitors 20 dB down with nothing left running to put them back.
+	# outputs 20 dB down with nothing left running to put them back.
 	trap 'release; exit 0' INT TERM
 
 	# Apply the button's current state rather than waiting for the next
 	# press, or starting up with DIM already engaged would look dead
 	# until it had been pressed twice.
-	#
-	# The exception is Dim Switch already being on: that means an
-	# earlier run engaged and did not get to release, so the pre-dim
-	# AN1/2 level is gone and re-saving would latch the dimmed one.
 	if [ "$last" = "on" ]; then
-		if [ "$MODE" != "--main-only" ] &&
-		   [ "$(read_ctl 'Dim Switch')" = "on" ]; then
-			echo "bbf-dim-watch: already dimmed by an earlier run," \
-				"leaving AN1/2 alone until the next release" >&2
-		else
-			engage
-		fi
+		engage
 	fi
 
 	while read -r _; do
-		now=$(read_ctl 'Front Panel Dim')
+		now=$(read_ctl "name=Front Panel Dim")
 		if [ "$now" = "$last" ]; then
 			continue
 		fi
@@ -130,5 +125,6 @@ alsactl monitor "$CTL" | {
 	# Falling out means alsactl stopped. The loop's own status is 0, so
 	# without this the watcher would exit cleanly and Restart=on-failure
 	# would not bring it back.
+	release
 	die "alsactl monitor exited, no longer watching"
 }
