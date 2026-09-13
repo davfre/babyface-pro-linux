@@ -722,20 +722,17 @@ static int bf_trim_put(struct snd_kcontrol *kctl, struct snd_ctl_elem_value *uco
  * AN1/2 pair" (cap_trim2/3/4.pcap, hardware-verified) - the analog
  * input's own gain-trim, applied through the crosspoint registers
  * exactly like a fader (there is no separate trim register). Two
- * different curves combine, matching tuxmix-usb's own already-shipped
- * Rust implementation of this same capture: the low map holds the
- * trim ALONE on the MASTER curve (0x2000 = 0 dB, `bf_master_16bit`);
- * the standard map holds fader+trim SUMMED on the FADER curve
- * (`bf_fader_db2_to_raw`). Always writes all 8 registers for the pair
- * (both AN1+AN2 or both AN3+AN4 - TotalMix's own linked-strip
- * behavior); `mic` may be either channel of the pair; the base is
- * derived (`mic & ~1`) so the WRITE always lands on the correct pair's
- * registers regardless of which channel's control triggered it -
- * tuxmix-usb's own version instead assumes the caller always passes
- * the pair's even index. Destination is always the AN1/2 monitor bus,
- * matching set_ms_proc/set_cue/etc's own AN1/2-only scope (real
- * TotalMix's Trim doesn't reach other outputs either, per the
- * already-verified Rust reference).
+ * different curves combine: the low map holds the trim ALONE on the
+ * MASTER curve (0x2000 = 0 dB, `bf_master_16bit`); the standard map
+ * holds fader+trim SUMMED on the FADER curve (`bf_fader_db2_to_raw`).
+ * Always writes all 8 registers for the pair (both AN1+AN2 or both
+ * AN3+AN4, matching the vendor software's linked-strip behaviour);
+ * `mic` may be either channel of the pair, and the base is derived
+ * (`mic & ~1`) so the write always lands on the correct pair's
+ * registers regardless of which channel's control triggered it.
+ * Destination is always the AN1/2 monitor bus, the same scope the
+ * MS-processor and CUE writes have, and the same one the vendor
+ * software's Trim reaches.
  *
  * Trim is a genuinely SHARED value per pair on real hardware (one
  * write always touches both channels' registers) but is exposed as 2
