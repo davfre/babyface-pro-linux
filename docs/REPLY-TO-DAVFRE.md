@@ -83,19 +83,29 @@ string.
 
 ## On the rest of issue #4
 
-- **Unity on every load** — your read is right and it is slightly worse
+- **Unity on every load** — you were right and it was slightly worse
   than you put it: `babyface_write_default_mixer()` routes all 14
   sources into every output at 0 dB each, with masters at 0 dB, so they
-  sum. The intent was a card that makes sound without TuxMix, but "makes
-  sound" should not mean "everything at once at full tilt into whatever
-  is plugged in". I am going to change the default; the open question is
-  only what it changes to.
-- **DIM decodes but never acts** — confirmed, and the README was
-  overclaiming. `SET` does act in-kernel (it toggles phantom), so there
-  is no principled reason DIM should not. For now I have fixed the
-  README to say what the driver actually does; wiring the button to the
-  existing `Dim Switch` control is a small change I would rather test
-  than rush.
+  sum. Changed: masters now come up at **-20 dB**, your suggested
+  figure. I used the exact 8-bit/16-bit pair the hardware's own DIM
+  button writes, so it is a measured value rather than one I picked.
+  The routing default is unchanged, so the card still makes sound with
+  nothing in user space. One consequence you may notice: DIM is an
+  *absolute* -20 dB, so it now does nothing audible until you raise a
+  master above that.
+- **DIM decodes but never acts** — fixed, it acts now, same
+  host-in-the-loop arrangement as SET. The README was overclaiming and
+  is corrected too. **This is the one thing I could not test myself the
+  way I tested the rest**: I can exercise the code path through the
+  ALSA control, but I cannot press the physical button from a script.
+  If you get a moment, pressing DIM on your unit and checking that
+  `Dim Switch` flips and the Phones output drops would close that gap —
+  and it would be on the non-FS, which is the better test anyway.
+- **Card naming** — changed before it can freeze. `card->driver` is
+  `BabyfacePro`, shortname `Babyface Pro`, and the card id is now
+  derived caiaq-style rather than left to the core, which was giving
+  `hw:FS` (and `hw:Pro` after the rename). It reads `hw:BabyfacePro`.
+  Your unit should stop announcing itself as an FS.
 - **Control naming** — agreed, particularly that indices 2 and 3 are
   Hi-Z instrument inputs called "Mic". The crosspoints already name
   themselves per source, so there is a pattern to follow.
