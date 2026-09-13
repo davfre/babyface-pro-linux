@@ -88,7 +88,7 @@ release() {
 	saved=''
 }
 
-last=$(read_ctl 'Front Panel Dim')	# adopt the current state, do not act
+last=$(read_ctl 'Front Panel Dim')
 
 # The loop runs in the pipeline's subshell, so 'saved' and the trap both
 # have to live in here with it.
@@ -97,6 +97,23 @@ alsactl monitor "$CTL" | {
 	# Without this, stopping the service while dimmed would leave the
 	# monitors 20 dB down with nothing left running to put them back.
 	trap 'release; exit 0' INT TERM
+
+	# Apply the button's current state rather than waiting for the next
+	# press, or starting up with DIM already engaged would look dead
+	# until it had been pressed twice.
+	#
+	# The exception is Dim Switch already being on: that means an
+	# earlier run engaged and did not get to release, so the pre-dim
+	# AN1/2 level is gone and re-saving would latch the dimmed one.
+	if [ "$last" = "on" ]; then
+		if [ "$MODE" != "--main-only" ] &&
+		   [ "$(read_ctl 'Dim Switch')" = "on" ]; then
+			echo "bbf-dim-watch: already dimmed by an earlier run," \
+				"leaving AN1/2 alone until the next release" >&2
+		else
+			engage
+		fi
+	fi
 
 	while read -r _; do
 		now=$(read_ctl 'Front Panel Dim')
