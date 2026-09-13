@@ -1654,11 +1654,26 @@ out:
 	return ret;
 }
 
-/* Gain scales: the mic preamps (AN1/2) span 0-65 dB over raw 0-20
- * (3.25 dB/step); the Hi-Z instrument inputs (AN3/4) are digitally
- * limited to 9 dB over raw 0-18 (0.5 dB/step) - manual sec. 10, raw
- * ranges verified from cap_gain12/cap_gain34.pcap.  Shared by the GUI
- * controls and the front-panel gain wheel.
+/* Gain scales.
+ *
+ * The mic preamps (AN1/2) span 0-65 dB in 1 dB steps, carried in a
+ * packed byte rather than a plain count:
+ *
+ *	coarse = min(db / 3, 20)	bits 0-4, 3 dB per step
+ *	fine   = db - 3 * coarse	bits 5-7, the 0-2 dB remainder
+ *	value  = (fine << 5) | coarse
+ *
+ * Above 60 dB coarse saturates at 20 and fine continues 3, 4, 5, so
+ * 65 dB is 0xb4.  Decoded from USBPcap captures of TotalMix on
+ * Windows (bbf-gain2/3/4.pcap, 48 writes, all matching).
+ *
+ * Bits 5-7 were previously read as a transaction counter and written
+ * with a rotating 0x20/0x00/0x40, which both discarded the fine part
+ * of the setting and applied 0-2 dB of error depending on where the
+ * rotation happened to be.
+ *
+ * The Hi-Z instrument inputs (AN3/4) are not packed: the value is the
+ * gain in 0.5 dB units, 0-9 dB over 0-18.
  */
 int bf_gain_max_db(int mic)
 {
@@ -1667,12 +1682,20 @@ int bf_gain_max_db(int mic)
 
 int bf_gain_db(int mic, u8 raw)
 {
-	return mic < 2 ? (raw * 13) / 4 : raw / 2;
+	if (mic >= 2)
+		return raw / 2;
+	return 3 * (raw & BF_GAIN_COARSE_MASK) + (raw >> BF_GAIN_FINE_SHIFT);
 }
 
 u8 bf_gain_raw(int mic, int db)
 {
-	return mic < 2 ? (db * 8 + 13) / 26 : db * 2;
+	int coarse, fine;
+
+	if (mic >= 2)
+		return db * 2;
+	coarse = min(db / 3, BF_GAIN_COARSE_MAX);
+	fine = db - 3 * coarse;
+	return (u8)((fine << BF_GAIN_FINE_SHIFT) | coarse);
 }
 
 static int bf_gain_info(struct snd_kcontrol *kctl,
@@ -1706,7 +1729,7 @@ static int bf_gain_put(struct snd_kcontrol *kctl,
 	struct snd_usb_babyface *chip = snd_kcontrol_chip(kctl);
 	int mic = kctl->private_value;
 	int db = ucontrol->value.integer.value[0];
-	u8 raw, counter;
+	u8 raw;
 	int ret = 0;
 
 	if (db < 0 || db > bf_gain_max_db(mic))
@@ -1716,12 +1739,8 @@ static int bf_gain_put(struct snd_kcontrol *kctl,
 	if (db == chip->gain[mic])
 		goto out;
 	raw = bf_gain_raw(mic, db);
-	counter = (chip->gain_cycle % 3 == 0) ? 0x20 :
-		  (chip->gain_cycle % 3 == 1) ? 0x00 : 0x40;
-	chip->gain_cycle = (chip->gain_cycle + 1) % 3;
 
-	ret = bf_vendor_write(chip, BF_REQ_GAIN,
-			      (u16)((raw & 0x1f) | counter),
+	ret = bf_vendor_write(chip, BF_REQ_GAIN, (u16)raw,
 			      BF_REG_GAIN + mic);
 	if (ret < 0)
 		goto out;

@@ -231,18 +231,14 @@ int babyface_restore_state(struct snd_usb_babyface *chip)
 	if (ret < 0)
 		return ret;
 
-	/* The four mic gains (the counter restarts). */
+	/* The four input gains. */
 	for (mic = 0; mic < 4; mic++) {
-		u8 counter = (mic % 3 == 0) ? 0x20 : (mic % 3 == 1) ? 0x00 : 0x40;
-
 		ret = bf_vendor_write(chip, BF_REQ_GAIN,
-				      (u16)((bf_gain_raw(mic, chip->gain[mic]) & 0x1f) |
-					    counter),
+				      (u16)bf_gain_raw(mic, chip->gain[mic]),
 				      BF_REG_GAIN + mic);
 		if (ret < 0)
 			return ret;
 	}
-	chip->gain_cycle = 1;
 
 	/* Masters (8-bit = the real volume) + mutes. */
 	ret = bf_apply_masters(chip);
@@ -475,7 +471,6 @@ void bf_state_save(struct snd_usb_babyface *chip)
 
 	s->preamp = chip->preamp;
 	memcpy(s->gain, chip->gain, sizeof(s->gain));
-	s->gain_cycle = chip->gain_cycle;
 	s->flag_cnt = chip->flag_cnt;
 	memcpy(s->master, chip->master, sizeof(s->master));
 	memcpy(s->muted, chip->muted, sizeof(s->muted));
@@ -513,7 +508,6 @@ int bf_state_restore(struct snd_usb_babyface *chip)
 			continue;
 		chip->preamp = s->preamp;
 		memcpy(chip->gain, s->gain, sizeof(chip->gain));
-		chip->gain_cycle = s->gain_cycle;
 		chip->flag_cnt = s->flag_cnt;
 		memcpy(chip->master, s->master, sizeof(chip->master));
 		memcpy(chip->muted, s->muted, sizeof(chip->muted));
