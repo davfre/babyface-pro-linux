@@ -24,21 +24,30 @@ set -eu
 CARD="${1:-BabyfacePro}"
 MODE="${2:-both}"
 
-need() {
-	amixer -c "$CARD" cget name="$1" >/dev/null 2>&1 || {
-		echo "no '$1' control on card $CARD" >&2
-		exit 1
-	}
+die() {
+	echo "bbf-dim-watch: $*" >&2
+	exit 1
 }
+
+need() {
+	amixer -c "$CARD" cget name="$1" >/dev/null 2>&1 ||
+		die "no '$1' control on card $CARD"
+}
+
+amixer -c "$CARD" controls >/dev/null 2>&1 || die "no such card: $CARD"
 need 'Front Panel Dim'
 if [ "$MODE" != "--main-only" ]; then need 'Dim Switch'; fi
 if [ "$MODE" != "--phones-only" ]; then need 'AN1/2 Playback Volume'; fi
 
+# A pipeline's status is the last command's, so a failed amixer here
+# would otherwise surface as an empty string rather than an error, and
+# the caller would go on to do arithmetic on it.
 read_ctl() {
-	amixer -c "$CARD" cget name="$1" | sed -n 's/^  : values=//p' | head -1
+	_v=$(amixer -c "$CARD" cget name="$1" 2>/dev/null |
+		sed -n 's/^  : values=//p' | head -1)
+	[ -n "$_v" ] || die "could not read '$1' on card $CARD"
+	printf '%s\n' "$_v"
 }
-
-saved=''
 
 engage() {
 	if [ "$MODE" != "--main-only" ]; then
@@ -75,14 +84,28 @@ release() {
 
 last=$(read_ctl 'Front Panel Dim')	# adopt the current state, do not act
 
-alsactl monitor "$CARD" | while read -r _; do
-	now=$(read_ctl 'Front Panel Dim')
-	if [ "$now" = "$last" ]; then
-		continue
-	fi
-	last="$now"
-	case "$now" in
-	on)	engage ;;
-	off)	release ;;
-	esac
-done
+# The loop runs in the pipeline's subshell, so 'saved' and the trap both
+# have to live in here with it.
+alsactl monitor "$CARD" | {
+	saved=''
+	# Without this, stopping the service while dimmed would leave the
+	# monitors 20 dB down with nothing left running to put them back.
+	trap 'release; exit 0' INT TERM
+
+	while read -r _; do
+		now=$(read_ctl 'Front Panel Dim')
+		if [ "$now" = "$last" ]; then
+			continue
+		fi
+		last="$now"
+		case "$now" in
+		on)	engage ;;
+		off)	release ;;
+		esac
+	done
+
+	# Falling out means alsactl stopped. The loop's own status is 0, so
+	# without this the watcher would exit cleanly and Restart=on-failure
+	# would not bring it back.
+	die "alsactl monitor exited, no longer watching"
+}
