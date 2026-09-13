@@ -95,12 +95,19 @@ string.
   master above that.
 - **DIM decodes but never acts** — fixed, it acts now, same
   host-in-the-loop arrangement as SET. The README was overclaiming and
-  is corrected too. **This is the one thing I could not test myself the
-  way I tested the rest**: I can exercise the code path through the
-  ALSA control, but I cannot press the physical button from a script.
-  If you get a moment, pressing DIM on your unit and checking that
-  `Dim Switch` flips and the Phones output drops would close that gap —
-  and it would be on the non-FS, which is the better test anyway.
+  is corrected too, and the physical button is tested: two presses on
+  the FS give two `Dim Switch` events and two `Front Panel Dim` events,
+  with a clean toggle round-trip and nothing in dmesg.
+
+  One detail from that capture does not match your description. You
+  wrote that pressing DIM "changes `Front Panel Button` and nothing
+  else"; on this unit the press moves **`Front Panel Dim`**, and
+  `Front Panel Button` did not move at all in the capture. It makes no
+  difference to the fix, and I have not chased it, but if you were
+  watching `Front Panel Button` to decide the button was inert, that
+  may be why. Worth a glance on the non-FS if you happen to be
+  looking — a genuine difference between the two units would be more
+  interesting than my miscapture.
 - **Card naming** — changed before it can freeze. `card->driver` is
   `BabyfacePro`, shortname `Babyface Pro`, and the card id is now
   derived caiaq-style rather than left to the core, which was giving

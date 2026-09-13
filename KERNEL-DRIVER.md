@@ -435,6 +435,15 @@ first-impulse method.)  Full sweep `tools/kernel/latency-sweep.sh`:
   -20 dB, so with the new default it does nothing audible until a
   master is raised above -20 dB. That is how the hardware has always
   behaved; it is simply now visible from the first second.
+- **The front-panel DIM button acts** (wired 2026-09-13, confirmed on
+  the physical unit the same day): two presses gave two `Dim Switch`
+  and two `Front Panel Dim` events, clean toggle round-trip, no
+  deadlock between the control path and the panel work. Note the press
+  moved `Front Panel Dim`, NOT `Front Panel Button` - which does not
+  match the description in issue #4 ("pressing it changes Front Panel
+  Button and nothing else"). Not chased, since it does not affect the
+  fix, but worth knowing before relying on `Front Panel Button` to
+  observe a DIM press.
 - **Card naming is model-neutral**: `card->driver` = `BabyfacePro`,
   shortname `Babyface Pro`, id `BabyfacePro`. The FS and the 2015
   non-FS share VID:PID, bcdDevice and iProduct shape - the FS's own

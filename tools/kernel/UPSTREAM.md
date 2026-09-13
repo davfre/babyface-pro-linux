@@ -234,6 +234,13 @@ regardless of whether a review arrives:
     `bf_dim_apply()`, which asserts the mutex rather than taking it,
     since it is now reached from both the control and the panel work -
     the exact shape that self-deadlocked this driver once before.
+    **Verified with the physical button** (2026-09-13): two presses on
+    the FS produced two `Dim Switch` change events and two `Front Panel
+    Dim` events, the switch returned to off after the second press, and
+    dmesg stayed clean. The `Front Panel Dim` movement is the useful
+    half of that: it is the device reflecting its own engaged-dim state
+    back through the 0x17 readback, so the write really reached the
+    wire rather than only the driver's cache.
 - **Still open from that report**: all four gains are named
   `Mic 1 Capture Volume` (index 0-3) though index 2 and 3 are Hi-Z
   instrument inputs running 0-9 dB, and both PADs are `Pad Mic 1`.
