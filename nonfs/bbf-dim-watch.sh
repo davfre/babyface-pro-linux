@@ -35,6 +35,12 @@ need() {
 }
 
 amixer -c "$CARD" controls >/dev/null 2>&1 || die "no such card: $CARD"
+
+# amixer takes a bare card id or index; alsactl wants a full CTL name.
+case "$CARD" in
+*:*)	CTL="$CARD" ;;
+*)	CTL="hw:$CARD" ;;
+esac
 need 'Front Panel Dim'
 if [ "$MODE" != "--main-only" ]; then need 'Dim Switch'; fi
 if [ "$MODE" != "--phones-only" ]; then need 'AN1/2 Playback Volume'; fi
@@ -86,7 +92,7 @@ last=$(read_ctl 'Front Panel Dim')	# adopt the current state, do not act
 
 # The loop runs in the pipeline's subshell, so 'saved' and the trap both
 # have to live in here with it.
-alsactl monitor "$CARD" | {
+alsactl monitor "$CTL" | {
 	saved=''
 	# Without this, stopping the service while dimmed would leave the
 	# monitors 20 dB down with nothing left running to put them back.
