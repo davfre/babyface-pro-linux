@@ -5,7 +5,7 @@ I spent the morning taking measurements of the non-FS Pro. Here's what I found:
 | | |
 |---|---|
 | ✓ | **16 bit output master law** exact on this unit: 0.00 dB spread over a 36 dB span, through the device's own Loopback, repeated three times |
-| ✓ | **PAD** about -10.3 dB, and it survives a module reload |
+| ✓ | **PAD** about -10 dB |
 | ✓ | **32-sample buffers** run clean full duplex, with the DMA fix applied and `frames_per_urb=32 nurbs=8` |
 | ✗ | **Mic gain law** the control reaches 21 of its 66 positions |
 
