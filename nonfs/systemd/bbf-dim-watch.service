@@ -1,9 +1,18 @@
+# Superseded by the driver acting on the button press itself.  Only useful
+# against an unpatched driver.
+#
+# Install:
+#   install -Dm755 nonfs/bbf-dim-watch.sh ~/.local/bin/bbf-dim-watch.sh
+#   install -Dm644 nonfs/systemd/bbf-dim-watch.service \
+#       ~/.config/systemd/user/bbf-dim-watch.service
+#   systemctl --user enable --now bbf-dim-watch.service
+
 [Unit]
-Description=Mirror the Babyface Pro front-panel DIM button onto the Dim Switch control
+Description=Mirror the Babyface Pro front-panel DIM button onto the output masters
 After=sound.target
 
 [Service]
-ExecStart=%h/ws/dev/audio/rme/babyface-pro-linux/nonfs/bbf-dim-watch.sh BabyfacePro
+ExecStart=%h/.local/bin/bbf-dim-watch.sh BabyfacePro
 Restart=on-failure
 RestartSec=5
 
