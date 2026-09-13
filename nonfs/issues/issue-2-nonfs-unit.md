@@ -1,4 +1,4 @@
-<!-- gh issue create --title "Measurements from a non-FS Babyface Pro, and a few smaller things" -->
+<!-- gh issue create --title "Runs on the original Babyface Pro (non-FS): measurements and a few notes" -->
 
 I spent the morning taking measurements of the non-FS Pro. Here's what I found:
 
