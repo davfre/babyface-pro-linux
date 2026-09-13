@@ -918,6 +918,21 @@ void babyface_stream_work(struct work_struct *work)
 					 usb_sndintpipe(chip->dev, BF_EP_OUT),
 					 chip->buf_out[i], urbsize,
 					 babyface_complete_out, chip, 1);
+			/* The buffers come from usb_alloc_coherent(), so
+			 * they are already DMA-mapped: hand the HCD the
+			 * mapping instead of letting it map them again.
+			 * Without this, usb_hcd_map_urb_for_dma() calls
+			 * dma_map_single() on a coherent allocation, which
+			 * fails with -EAGAIN on any host where that
+			 * allocation is a vmap (IOMMU-backed dma-iommu,
+			 * e.g. amd_iommu in its default translated mode).
+			 */
+			chip->urbs_in[i]->transfer_dma = chip->dma_in[i];
+			chip->urbs_in[i]->transfer_flags |=
+				URB_NO_TRANSFER_DMA_MAP;
+			chip->urbs_out[i]->transfer_dma = chip->dma_out[i];
+			chip->urbs_out[i]->transfer_flags |=
+				URB_NO_TRANSFER_DMA_MAP;
 		}
 		for (i = 0; i < chip->nurbs; i++) {
 			ret = usb_submit_urb(chip->urbs_in[i], GFP_KERNEL);
