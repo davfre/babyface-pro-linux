@@ -1,0 +1,26 @@
+kernel: hand the HCD the existing DMA mapping for the stream URBs
+
+The stream buffers come from usb_alloc_coherent(), so they are already
+mapped for the device, and the handles are kept in chip->dma_in and
+chip->dma_out.  The URBs were submitted without transfer_dma and
+without URB_NO_TRANSFER_DMA_MAP, so usb_hcd_map_urb_for_dma() called
+dma_map_single() on a coherent allocation.
+
+Where the IOMMU runs in translated mode, which is the default on
+current AMD and Intel desktops, that allocation can be a vmap rather
+than contiguous lowmem and the second mapping fails with -EAGAIN.
+Every stream start then fails, and anything that retries floods the
+log:
+
+  usb 3-5.1.2: failed to start stream: -11
+
+Where the allocation happens to be physically contiguous the same code
+works by accident, which is presumably why it has not shown up before.
+
+With this applied the stream starts on the first attempt and a
+full-duplex arecord + aplay pair at 48 kHz S32_LE runs clean.  Tested
+on an original Babyface Pro (non-FS) on CachyOS, kernel
+7.2.4-1-cachyos, x86_64, AMD, with amd_iommu in its default translated
+mode.
+
+Fixes #1

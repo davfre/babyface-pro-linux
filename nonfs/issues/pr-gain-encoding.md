@@ -1,6 +1,4 @@
-**Title:** ALSA: usb: babyface-pro: fix the mic gain encoding (1 dB steps, full 65 dB range)
-
----
+<!-- gh pr create --title "ALSA: usb: babyface-pro: fix the mic gain encoding (1 dB steps, full 65 dB range)" -->
 
 The mic gain control currently reaches 21 hardware states, about 3 dB apart,
 across its 0 to 65 dB range. The hardware does 1 dB steps. This packs the
@@ -29,7 +27,7 @@ wValue = (fine << 5) | coarse
 
 Above 60 dB `coarse` saturates at 20 and `fine` continues 3, 4, 5, so 65 dB is
 `0xb4`. Verified against 48 gain writes across four captures, every value
-matching, including a stray 34 dB (`0x2b`) set by accident.
+matching.
 
 So the driver was masking off the fine part of every setting and then writing a
 rotating value into those same bits, which also meant the gain depended on

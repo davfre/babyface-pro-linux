@@ -15,8 +15,7 @@ into those same bits depending on where it had got to.  The control
 reached 21 hardware states about 3 dB apart rather than 66 at 1 dB.
 
 Decoded from USBPcap captures of TotalMix on Windows: 48 gain writes
-across four captures, every value matching the formula, including a
-stray 34 dB (0x2b) set by accident.
+across four captures, every value matching the formula.
 
 Measured on an original Babyface Pro (non-FS) by sweeping the control
 with nothing patched and measuring the preamp's own noise floor, which
