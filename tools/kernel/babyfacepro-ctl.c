@@ -2448,6 +2448,15 @@ static void bf_panel_set_phantom(struct snd_usb_babyface *chip)
 	mutex_unlock(&chip->mutex);
 }
 
+/* Debug: log the raw four-byte panel status whenever it changes, so the
+ * meaning of a bit can be worked out by pressing things.  Read-only:
+ * the poll already does this read every tick, nothing extra is written
+ * to the device.  insmod panel_debug=1.
+ */
+static bool panel_debug;
+module_param(panel_debug, bool, 0644);
+MODULE_PARM_DESC(panel_debug, "Log raw front-panel status bytes on change (debug).");
+
 static void bf_panel_notify(struct snd_usb_babyface *chip, int ctl)
 {
 	if (chip->panel_kctl[ctl])
@@ -2470,6 +2479,14 @@ static void bf_panel_tick(struct snd_usb_babyface *chip)
 
 	if (bf_vendor_read(chip, BF_REQ_PREAMP, BF_REG_PANEL_READ, st) < 0)
 		return;	/* device gone / busy - retry next tick */
+
+	if (panel_debug && chip->panel_seen &&
+	    memcmp(st, chip->panel_prev, sizeof(st)))
+		dev_info(&chip->iface->dev,
+			 "panel %02x %02x %02x %02x -> %02x %02x %02x %02x\n",
+			 chip->panel_prev[0], chip->panel_prev[1],
+			 chip->panel_prev[2], chip->panel_prev[3],
+			 st[0], st[1], st[2], st[3]);
 
 	if (!chip->panel_seen) {
 		chip->panel_seen = true;
