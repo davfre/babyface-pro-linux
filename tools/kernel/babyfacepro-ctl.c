@@ -458,6 +458,13 @@ int bf_preamp_state_write(struct snd_usb_babyface *chip)
 
 /* -- crosspoint matrix (6 outputs x 14 sources) -------------- */
 
+/* The crosspoint fader is linear in amplitude: BF_FADER_0DB (0x16a0) is
+ * unity and BF_FADER_TOP (0x2d41) is exactly twice that, i.e. +6 dB - see
+ * bf_fader_curve, whose whole span follows raw = BF_FADER_0DB * 10^(dB/20).
+ * Raw 0 is off.
+ */
+static const DECLARE_TLV_DB_LINEAR(bf_xpoint_tlv, TLV_DB_GAIN_MUTE, 600);
+
 static int bf_xpoint_info(struct snd_kcontrol *kctl,
 			  struct snd_ctl_elem_info *uinfo)
 {
@@ -785,6 +792,9 @@ int bf_trim_apply(struct snd_usb_babyface *chip, int mic, int trim_db2)
 				ss->idx_r));
 }
 
+/* Trim's control value is dB as well, -65..+6. */
+static const DECLARE_TLV_DB_SCALE(bf_trim_tlv, -6500, 100, 0);
+
 static int bf_trim_info(struct snd_kcontrol *kctl, struct snd_ctl_elem_info *uinfo)
 {
 	uinfo->type = SNDRV_CTL_ELEM_TYPE_INTEGER;
@@ -848,9 +858,12 @@ int babyface_create_xpoints(struct snd_usb_babyface *chip)
 				.iface = SNDRV_CTL_ELEM_IFACE_MIXER,
 				.name = "Playback Volume",
 				.index = out * 14 + src,
+				.access = SNDRV_CTL_ELEM_ACCESS_READWRITE |
+					  SNDRV_CTL_ELEM_ACCESS_TLV_READ,
 				.info = bf_xpoint_info,
 				.get = bf_xpoint_get,
 				.put = bf_xpoint_put,
+				.tlv.p = bf_xpoint_tlv,
 				.private_value = (out << 8) | src,
 			}, chip);
 			/* Name the control by its source: "AN1 Playback Volume",
@@ -905,9 +918,12 @@ int babyface_create_xpoints(struct snd_usb_babyface *chip)
 			.iface = SNDRV_CTL_ELEM_IFACE_MIXER,
 			.name = "Trim Volume",
 			.index = src,
+			.access = SNDRV_CTL_ELEM_ACCESS_READWRITE |
+				  SNDRV_CTL_ELEM_ACCESS_TLV_READ,
 			.info = bf_trim_info,
 			.get = bf_trim_get,
 			.put = bf_trim_put,
+			.tlv.p = bf_trim_tlv,
 			.private_value = src,
 		}, chip);
 		chip->trim_kctl[src] = kctl;
@@ -1684,6 +1700,12 @@ u8 bf_gain_raw(int mic, int db)
 	return mic < 2 ? (db * 8 + 13) / 26 : db * 2;
 }
 
+/* The preamp control's value already IS the gain in dB (0..65 for the mic
+ * inputs, 0..9 for the instrument ones); the 3.25 dB/step quantisation the
+ * hardware register imposes happens in bf_gain_raw().
+ */
+static const DECLARE_TLV_DB_SCALE(bf_gain_tlv, 0, 100, 0);
+
 static int bf_gain_info(struct snd_kcontrol *kctl,
 			struct snd_ctl_elem_info *uinfo)
 {
@@ -1834,9 +1856,12 @@ int babyface_create_controls(struct snd_usb_babyface *chip)
 			.iface = SNDRV_CTL_ELEM_IFACE_MIXER,
 			.name = "Mic 1 Capture Volume",
 			.index = i,
+			.access = SNDRV_CTL_ELEM_ACCESS_READWRITE |
+				  SNDRV_CTL_ELEM_ACCESS_TLV_READ,
 			.info = bf_gain_info,
 			.get = bf_gain_get,
 			.put = bf_gain_put,
+			.tlv.p = bf_gain_tlv,
 			.private_value = i,
 		}, chip);
 		err = snd_ctl_add(chip->card, kctl);
