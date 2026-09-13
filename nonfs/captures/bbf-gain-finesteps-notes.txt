@@ -1,0 +1,21 @@
+bbf-gain-finesteps.pcap - Babyface Pro (non-FS, 2a39:3fc0), Windows, RME driver, TotalMix
+Captured on \\.\USBPcap1, Babyface alone on that root hub (dev1). 13 Sep 2026.
+
+TotalMix GUI rounding (observed by user): the Gain field accepts decimals but snaps
+  line inputs (3/4) to the nearest 0.5 dB, mic inputs (1/2) to the nearest whole dB.
+
+Gain set, as confirmed by the capture (7 bursts):
+  10.297  17[63]=3c 21[0]=00 1a[0]=00 1a[1]=00 1a[2]=08 1a[3]=00   in3 = 4.0
+  23.205  17[63]=3c 21[0]=00 1a[0]=00 1a[1]=00 1a[2]=09 1a[3]=00   in3 = 4.5
+  28.942  17[63]=3c 21[0]=00 1a[0]=00 1a[1]=00 1a[2]=0a 1a[3]=00   in3 = 5.0
+  31.755  17[63]=3c 21[0]=00 1a[0]=00 1a[1]=00 1a[2]=00 1a[3]=00   in3 = 0
+  40.896  17[63]=3c 21[0]=00 1a[0]=23 1a[1]=00 1a[2]=00 1a[3]=00   in1 = 10
+  50.439  17[63]=3c 21[0]=00 1a[0]=43 1a[1]=00 1a[2]=00 1a[3]=00   in1 = 11
+  55.807  17[63]=3c 21[0]=00 1a[0]=00 1a[1]=00 1a[2]=00 1a[3]=00   in1 = 0
+
+CONCLUSIONS
+  Line inputs: wValue is gain in 0.5 dB units. 4.0 -> 0x08, 4.5 -> 0x09, 5.0 -> 0x0a.
+    Range 0..9 dB = raw 0..18. Half steps confirmed.
+  Mic inputs: whole dB only, packed as before. 10 -> 0x23, 11 -> 0x43.
+
+req 0x17 wIndex 0x3f wValue still 0x3c (same as bbf-gain4, vs 0x1c in gain2/3).

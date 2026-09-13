@@ -1,0 +1,30 @@
+bbf-gain2.pcap - Babyface Pro (non-FS, 2a39:3fc0), Windows, RME driver, TotalMix
+Captured on \\.\USBPcap1, Babyface alone on that root hub (dev1). 13 Sep 2026.
+
+Input 1 Gain set in TotalMix, in order: 0, 10, 20, 30, 40, 50, 60, 65
+(the 0/1/2/3/4/5 fine block was NOT done in this capture)
+
+Every change sends this burst (host->device, vendor, bmRequestType 0x40, wLength 0):
+  req 0x17  wValue 0x001c  wIndex 0x003f
+  req 0x21  wValue 0x0000  wIndex 0x0000
+  req 0x1a  wValue <X>     wIndex 0x0000
+  req 0x1a  wValue 0x0000  wIndex 0x0001
+  req 0x1a  wValue 0x0000  wIndex 0x0002
+  req 0x1a  wValue 0x0000  wIndex 0x0003
+
+Gain writes (7 bursts, one per change; setting 0 at the start sent nothing):
+  t(s)    set dB   wValue @ wIndex 0
+   5.272    10     0x23 (35)
+  10.033    20     0x46 (70)
+  14.414    30     0x0a (10)
+  18.507    40     0x2d (45)
+  21.956    50     0x50 (80)
+  25.149    60     0x14 (20)
+  28.802    65     0xb4 (180)
+
+Superseded: the "(dB * 3.5) mod 95" pattern was a coincidence. Real encoding decoded
+from bbf-gain3, see bbf-gain3-notes.txt: wValue = (fine << 5) | coarse,
+coarse = min(dB/3, 20), fine = dB - 3*coarse. All 7 writes above match it.
+
+Background traffic: vendor IN reads (bmRequestType 0xc0) req 0x11/0x17/0x1c/0x1e/0x1f,
+wIndex 0, wLength 4, 1636 each (status/meter polling); bulk IN ep 0x85 (3272 pkts).

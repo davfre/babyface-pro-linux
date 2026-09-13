@@ -1,0 +1,42 @@
+bbf-gain4.pcap - Babyface Pro (non-FS, 2a39:3fc0), Windows, RME driver, TotalMix
+Captured on \\.\USBPcap1, Babyface alone on that root hub (dev1). 13 Sep 2026.
+Loopback cables unplugged. Inputs set one at a time via each strip's settings (wrench) panel.
+
+Gain set in TotalMix, in order (each input started at 0, which sent nothing):
+  Input 2 (mic):  10, 61, 0
+  Input 3 (line): 1, 2, 3, 9, 0      (TotalMix max for input 3 is 9)
+  Input 4 (line): 5, 0
+10 changes -> 10 bursts. Same layout as before:
+  0x17 wIndex 0x003f ; 0x21 ; 0x1a @ wIndex 0,1,2,3 (all four written every time)
+
+Bursts (req[wIndex]=wValue hex):
+   4.904  17[63]=3c 21[0]=00 1a[0]=00 1a[1]=23 1a[2]=00 1a[3]=00   in2 = 10
+   8.693  17[63]=3c 21[0]=00 1a[0]=00 1a[1]=34 1a[2]=00 1a[3]=00   in2 = 61
+  11.587  17[63]=3c 21[0]=00 1a[0]=00 1a[1]=00 1a[2]=00 1a[3]=00   in2 = 0
+  14.677  17[63]=3c 21[0]=00 1a[0]=00 1a[1]=00 1a[2]=02 1a[3]=00   in3 = 1
+  16.325  17[63]=3c 21[0]=00 1a[0]=00 1a[1]=00 1a[2]=04 1a[3]=00   in3 = 2
+  17.845  17[63]=3c 21[0]=00 1a[0]=00 1a[1]=00 1a[2]=06 1a[3]=00   in3 = 3
+  20.661  17[63]=3c 21[0]=00 1a[0]=00 1a[1]=00 1a[2]=12 1a[3]=00   in3 = 9
+  22.646  17[63]=3c 21[0]=00 1a[0]=00 1a[1]=00 1a[2]=00 1a[3]=00   in3 = 0
+  26.947  17[63]=3c 21[0]=00 1a[0]=00 1a[1]=00 1a[2]=00 1a[3]=0a   in4 = 5
+  28.544  17[63]=3c 21[0]=00 1a[0]=00 1a[1]=00 1a[2]=00 1a[3]=00   in4 = 0
+
+CONCLUSIONS
+  wIndex = input number minus 1 (0,1 = mic inputs 1,2; 2,3 = line inputs 3,4).
+  TotalMix writes all four gains in every burst, not just the one that changed.
+
+  Mic inputs (wIndex 0,1), 0..65 dB - packed, same on input 2 as input 1:
+    coarse = min(dB / 3, 20)   bits 0-4
+    fine   = dB - 3 * coarse   bits 5-7
+    wValue = (fine << 5) | coarse
+    input 2: 10 dB -> 0x23, 61 dB -> 0x34  (match formula)
+
+  Line inputs (wIndex 2,3), 0..9 dB in TotalMix - NOT packed:
+    wValue = dB * 2            (1->0x02, 2->0x04, 3->0x06, 9->0x12, input 4: 5->0x0a)
+    Max 9 dB -> raw 18 (0x12), fits in 5 bits. Units are 0.5 dB - confirmed in
+    bbf-gain-finesteps (4.5 dB -> 0x09). TotalMix snaps line gain to 0.5 dB, mic to 1 dB.
+
+OPEN
+  req 0x17 wIndex 0x3f wValue was 0x1c in bbf-gain2/3 and is 0x3c here (bit 5, 0x20, set).
+  Some switch changed between captures 3 and 4 - see what was changed (PAD / 48V /
+  level / stereo link) before relying on that bit's meaning.
