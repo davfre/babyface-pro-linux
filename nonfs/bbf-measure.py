@@ -300,43 +300,33 @@ def t_noise(dev):
     dev.master(MASTER_SAFE)
     print("\n%8s %12s %10s" % ("db set", "measured", "step"))
     pts, prev = [], None
-    first = True
     cur = 0
     dev.gain(0)
     for db in gain_points(GAIN_STEP):
         cur = ramp_gain(dev, cur, db)
-        if first:
-            # At the first point, keep reading until two consecutive
-            # measurements agree, so the sweep starts from a flat reading
-            # rather than after a guess at how long to wait.  Discarded,
-            # but printed, so what was thrown away is visible.
-            print("   ramped 0 -> %d dB, now settling" % db)
-            sys.stdout.flush()
-            last = None
-            for _ in range(SETTLE_MAX):
-                w, _unused = dev.capture(play=False)
-                if w is None:
-                    break
-                d = None if last is None else w - last
-                print("%8d %12.2f %10s" % (
-                    db, w, "settling" if d is None else "%+.2f" % d))
+        # Read until two consecutive measurements agree, and take the
+        # second as the result.  Applied at every point, not just the
+        # first, so no point is measured under different conditions from
+        # any other.  Once things are flat this costs one extra read.
+        rms, last = None, None
+        for _ in range(SETTLE_MAX):
+            w, _unused = dev.capture(play=False)
+            if w is None:
+                break
+            if last is not None and abs(w - last) < SETTLE_TOL:
+                rms = w
+                break
+            if last is not None:
+                print("%8d %12.2f %10s" % (db, w, "settling"))
                 sys.stdout.flush()
-                if d is not None and abs(d) < SETTLE_TOL:
-                    print("   settled, within %.2f dB" % SETTLE_TOL)
-                    break
-                last = w
-            else:
-                print("   still moving after %d reads, carrying on anyway"
-                      % SETTLE_MAX)
-            sys.stdout.flush()
-            first = False
-        rms, peak = dev.capture(play=False)
+            last = w
         if rms is None:
-            print("%8d %12s" % (db, "silence"))
+            print("%8d %12s" % (db, "silence" if last is None else "unsettled"))
             prev = None
             continue
         step = "" if prev is None else "%+.2f" % (rms - prev)
         print("%8d %12.2f %10s" % (db, rms, step))
+        sys.stdout.flush()
         pts.append((float(db), rms))
         prev = rms
     top = [p for p in pts if p[0] >= 30]

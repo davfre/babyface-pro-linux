@@ -5,19 +5,15 @@ bbf-measure v3.2, card BabyfacePro, no cable
     measured floor tracks real gain at the top of the range)
 
   db set     measured       step
-   ramped 0 -> 35 dB, now settling
-      35       -87.21   settling
-      35       -91.48      -4.27
-      35       -91.94      -0.46
-      35       -91.97      -0.02
-   settled, within 0.25 dB
-      35       -91.96           
-      40       -86.88      +5.08
-      45       -81.90      +4.98
-      50       -76.92      +4.99
-      55       -71.82      +5.10
-      60       -67.08      +4.74
-      65       -62.13      +4.96
+      35       -91.42   settling
+      35       -91.94   settling
+      35       -91.97           
+      40       -86.89      +5.07
+      45       -81.90      +4.99
+      50       -76.93      +4.97
+      55       -71.86      +5.07
+      60       -67.15      +4.71
+      65       -62.10      +5.05
 
    0.994 dB per dB of control over the top of the range (30 dB and up)
    below that the converter's own noise floor dominates and the curve flattens
