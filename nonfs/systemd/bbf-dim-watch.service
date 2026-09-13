@@ -3,7 +3,7 @@ Description=Mirror the Babyface Pro front-panel DIM button onto the Dim Switch c
 After=sound.target
 
 [Service]
-ExecStart=%h/ws/dev/audio/babyface-pro-linux/nonfs/bbf-dim-watch.sh BabyfacePro
+ExecStart=%h/ws/dev/audio/rme/babyface-pro-linux/nonfs/bbf-dim-watch.sh BabyfacePro
 Restart=on-failure
 RestartSec=5
 
