@@ -107,17 +107,26 @@ alsactl monitor "$CTL" | {
 	trap 'release; exit 0' INT TERM
 
 	while read -r line; do
+		if [ -n "${BBF_DEBUG:-}" ]; then
+			echo "event: $line" >&2
+		fi
 		case "$line" in
 		*"Front Panel Button"*)	;;
 		*)			continue ;;
 		esac
-		[ "$(read_ctl "$CTL_BTN")" = "$BTN_DIM" ] || continue
+		_btn=$(read_ctl "$CTL_BTN")
+		if [ -n "${BBF_DEBUG:-}" ]; then
+			echo "  button=$_btn dimmed=$dimmed" >&2
+		fi
+		[ "$_btn" = "$BTN_DIM" ] || continue
 		if [ "$dimmed" = 0 ]; then
 			engage
 			dimmed=1
+			echo "dim on" >&2
 		else
 			release
 			dimmed=0
+			echo "dim off" >&2
 		fi
 	done
 
