@@ -1,0 +1,57 @@
+Front-panel DIM, raw status bytes
+Babyface Pro (non-FS, 2015), CachyOS, kernel 7.2.4-1-cachyos, x86_64
+2026-09-13
+
+Method
+------
+Logged the four bytes bf_panel_tick() reads whenever they change, at the
+default panel_poll_ms.  Read-only: the poll already does this read every
+tick, nothing extra is written to the device.  The patch is on
+davfre/babyface-pro-linux branch `staging` as "local: log raw panel
+status bytes on change", behind panel_debug=1.
+
+  sudo insmod snd-usb-babyface-pro.ko panel_debug=1
+  sudo dmesg -w | grep panel
+
+Trace
+-----
+DIM pressed, twice, then OUT pressed once:
+
+  panel 00 25 8d 40 -> 00 25 8d 60      DIM down
+  panel 00 25 8d 60 -> 00 25 8d 40      DIM released
+  panel 00 25 8d 40 -> 00 25 8d 60      DIM down
+  panel 00 25 8d 60 -> 00 25 8d 40      DIM released
+  panel 00 25 8d 40 -> 00 26 8d 48      OUT down
+  panel 00 26 8d 48 -> 00 26 8d 40      OUT released
+
+st[3] flashes 0x60 for DIM and 0x48 for OUT over the 0x40 idle base.
+st[1] does not move for DIM at all, across repeated presses.  The OUT
+press in the same trace does move it, 0x25 -> 0x26, which is the output
+selector in st[1] & 0x07 going 5 -> 6, so the byte is being read
+correctly.
+
+Controls, polled while pressing
+------------------------------
+  dim=on  btn=6  wheel=19     DIM pressed
+  dim=on  btn=6  wheel=25     wheel turned, tracks
+  dim=on  btn=4  wheel=25     OUT pressed
+  dim=on  btn=6  wheel=25     DIM pressed again
+
+Front Panel Button decodes both buttons correctly, 6 for DIM and 4 for
+OUT.  Front Panel Dim reads `on` permanently and never changes.
+
+Reading
+-------
+st[1] & 0x20 is a readback of the dim indicator flag.  On this unit the
+flag was already set at power-on, and nothing the button does changes
+it, so the control sits pinned at `on`.  The only thing that moves it is
+a host write of 0x17 wVal=0x2000 wIdx=0x2000.
+
+This differs from the FS, where the maintainer reports the press moves
+Front Panel Dim and does not move Front Panel Button.  Both were
+measured on real hardware, so it looks like the FS toggles the flag in
+firmware and the non-FS does not.
+
+After the driver gained a host-side toggle on the st[3] flash edge, the
+button works here and Front Panel Dim tracks it off/on/off, since the
+host write is now what moves the flag.
