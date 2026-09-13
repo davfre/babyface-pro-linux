@@ -20,9 +20,9 @@ as 6. I included the OUT press to show the rest of the decode is fine,
 `st[1] & 0x07` going 5 -> 6.
 
 My unit came up with the flag already set, so `Front Panel Dim` read
-`on` with the LEDs lit and nothing dimmed. That fits. The flag is the
-indicator, the host applies the attenuation, and no host had applied
-it.
+`on` with the LEDs lit and nothing dimmed. The flag only lights the
+indicator. Turning the level down is a separate set of writes, and
+nothing had made them.
 
 Two smaller things from chasing it:
 
