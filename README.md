@@ -49,11 +49,11 @@ Then the mixer is the normal ALSA control set: `amixer -c <n> controls`.
 
 ## Status & features
 
-**Hardware-validated** on a real Babyface Pro FS:
+**Hardware-validated** on a real Babyface Pro FS, and reported to run unmodified on an original (non-FS) Babyface Pro:
 
 - **Streaming** — 32–192 kHz, 2–12 channels, interrupt-URB, full-duplex; period floor 16 frames (0.33 ms), zero xruns across the sweep.
 - **Mixer (ALSA controls)** — 6 output masters + mutes, the full 6×14 crosspoint matrix, 4 preamp gains, phantom power + PAD, pitch/varispeed, loopback, width, FX send, MS processing, input link, AN 1>2, plus clock source, ref level, phase and trim.
-- **Front panel fully emulated** (the host is "in the loop", like TotalMix) — buttons, wheel, MIX-mode VU display.
+- **Front panel** (the host is "in the loop", like TotalMix) — every button, the wheel and the IN/OUT/MIX selection are decoded and exposed as read-only controls; the driver itself acts on SET (phantom), the wheel and MIX-mode, including the VU display. DIM is decoded but not acted on: the physical button moves `Front Panel Button` and nothing else, so dimming is up to user space via the `Dim Switch` control.
 - **PM** — suspend/resume with full mixer-state restore.
 - **Automated checks** — `regress.sh` passes 40/40 on hardware; `selftests.sh` runs laws, build and checkpatch without the card.
 

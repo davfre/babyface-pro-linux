@@ -52,7 +52,7 @@ libasound_module_pcm_tuxmix.so  ← PipeWire via spa-alsa (sink/source)
 | Rate switch = SET_INTERFACE(5, alt) (3 bandwidth classes) | ✅ 32/44.1/48/64/88.2 = alt1, 96/128 = alt2, 176.4/192 = alt3 — measured exact (48/96/192 kHz frame rates) |
 | Controls: 6 output masters (0-0x4000 raw, 0 dB = 0x2000) + mutes | ✅ per-output names ("AN1/2" / "PH3/4" / … Playback Volume+Switch) — the 8-bit register is the REAL volume (0.5 dB/step, 0xF3 = 0 dB) |
 | System volume = PipeWire SOFTWARE volume | ✅ DONE 2026-08-26 (cap_sysvol2.pcap: the Windows volume is a host-side stream gain, zero USB writes): the masters are named per output so SPA finds no "Master" element → the sink falls back to software volume; `wpctl set-volume` no longer moves any hardware register (verified). See “System-volume model — CORRECTED AGAIN” |
-| Controls: 4 preamp gains — TWO laws | ✅ AN1/2 mic: raw 0-20 = 0-65 dB (3.25 dB/step, cap_calib); AN3/4 instrument: 0-9 dB control, raw = dB×2 = 0-18 (0.5 dB/step, cap_gain34 — `bf_gain_max_db`) |
+| Controls: 4 preamp gains — TWO laws | ✅ AN1/2 mic: 0-65 dB in 1 dB steps, packed `(fine << 5) | coarse` (corrected 2026-09-13, was wrongly read as 3.25 dB/step + a transaction counter — see the gain-encoding entry below); AN3/4 instrument: 0-9 dB control, raw = dB×2 = 0-18 (0.5 dB/step, cap_gain34 — `bf_gain_max_db`) |
 | Controls: 2× phantom + 2× PAD (0x17 0x003F + 0x21 commit) | ✅ (LEDs + relay clicks) |
 | Controls: 84 crosspoints (6 out × 14 src) — output order corrected | ✅ (Phones = block 0) |
 | Controls: pitch, loopback ×6, AN1>2, link, width, FX send, MS | ✅ |

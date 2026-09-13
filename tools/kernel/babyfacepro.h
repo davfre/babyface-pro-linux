@@ -252,7 +252,9 @@ struct bf_source {
 extern const struct bf_source bf_sources[14];
 extern const u8 bf_xpoint_block[6];
 
-/* Calibrated preamp gain: 65 dB over 20 raw steps (3.25 dB/step). */
+/* Preamp gain: 0-65 dB in 1 dB steps, packed coarse/fine (see the
+ * gain-scale comment above bf_gain_max_db).
+ */
 #define BF_GAIN_MAX_DB			65
 /* Mic gain is packed: bits 0-4 coarse (3 dB), bits 5-7 the 0-2 dB rest. */
 #define BF_GAIN_COARSE_MASK		0x1f
@@ -292,8 +294,8 @@ struct snd_usb_babyface {
 	/* mixer state (no gain readback exists - host-side mirror) */
 	u16 preamp;			/* 48V/PAD bits, base 0x0c */
 	u8 gain[4];			/* preamp gain in dB 0-65/9 (raw derived
-					 * at write: mic 3.25 dB/step, instr
-					 * 0.5 dB/step)
+					 * at write: mic packed coarse/fine,
+					 * instr 0.5 dB/step)
 					 */
 	u8 flag_cnt;			/* 0xc000/0x4000/0x8000/0x0000 */
 	u16 master[6][2];		/* cached 16-bit masters */

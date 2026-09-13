@@ -15,7 +15,8 @@ and the driver is standalone, modeled on `snd-usb-caiaq`.
   `tools/usbdump/PROTOCOL.md`):
   - 6 output masters + mutes (the 8-bit register is the real volume,
     0.5 dB/step; the 16-bit is a kept-in-sync companion),
-  - 4 mic preamp gains (0–65 dB, 3.25 dB/step) + 48V/PAD per mic
+  - 4 mic preamp gains (0–65 dB, 1 dB steps, packed coarse/fine
+    register — corrected 2026-09-13, see PROTOCOL.md) + 48V/PAD per mic
     (relay clicks and front-panel LEDs verified),
   - 84 crosspoints (6 outputs × 14 sources) on the two maps
     (standard + low),
@@ -181,6 +182,47 @@ lore/linux-sound). No reviewer reply as of 2026-09-13. Meanwhile the
 tree has moved ahead of what is on the list, so a v4 is owed
 regardless of whether a review arrives:
 
+- **Two real bugs fixed by an outside contributor, David Fredman**
+  (PRs #2 and #3, merged 2026-09-13). Both are present in the v3
+  series as mailed, so v4 is not optional:
+  - **The stream URBs never handed the HCD their existing DMA
+    mapping.** The buffers come from `usb_alloc_coherent()` but were
+    submitted without `URB_NO_TRANSFER_DMA_MAP`, so the USB core tried
+    to map them a second time and failed with `-EAGAIN` on any
+    IOMMU-translated host - the default on current AMD and Intel
+    desktops. **v3 as submitted does not stream at all on such a
+    machine.** Every other `sound/usb` driver that allocates coherent
+    buffers sets the flag (`endpoint.c`, `midi.c`, `midi2.c`,
+    `misc/ua101.c`); this one was the exception.
+  - **The mic gain register was decoded wrongly.** Bits 5-7 are the
+    fine part of the gain, not a transaction counter; the driver
+    masked them off and wrote a rotating value into them. Result: 21
+    of 66 positions reachable, and the gain actually applied depended
+    on where the rotation stood - up to 2 dB of non-determinism for
+    the same requested setting. Verified against this repo's own FS
+    capture and re-measured on the FS unit (1.000 dB/dB after, 0.808
+    before). See PROTOCOL.md's corrected gain section.
+- **A second tester on a second hardware model.** Fredman runs the
+  driver unmodified on an original (2015, non-FS) Babyface Pro: same
+  VID:PID, same descriptors. This answers the bus-factor question
+  reviewers were expected to raise (old item 3 below), and it is worth
+  saying in the v4 cover letter. Note the two models cannot be told
+  apart from the descriptors: the FS here reports `bcdDevice` 0.01 and
+  `iProduct` "Babyface Pro (73055480)" - no "FS" anywhere - which is
+  also what the non-FS reports.
+- **Open design questions raised by that report**, none of them fixed
+  here because they are judgement calls, not defects:
+  - `card->driver` is hardcoded to `"BabyfaceProFS"`, and that string
+    is what alsa-lib config and UCM profiles match on. Easy to change
+    now, impossible after a kernel merge.
+  - `babyface_write_default_mixer()` routes all 14 sources into every
+    output at 0 dB with masters at 0 dB on every fresh load. That
+    sums. On monitors with no volume control of their own it is a
+    real hazard at first plug-in, before alsa-restore runs.
+  - All four gains are named `Mic 1 Capture Volume` (index 0-3),
+    though index 2 and 3 are Hi-Z instrument inputs running 0-9 dB.
+    Same for `Pad Mic 1`. Naming them per input, as the crosspoints
+    already do with AN1/AN2, would read better.
 - **5 new controls** (2026-09-06, `c72cfaf` + `77dcf1a`): Sample Clock
   Source, Instrument Ref Level, Phase Switch, Stereo Split Switch,
   Input Trim. None of these have ever been posted for review.

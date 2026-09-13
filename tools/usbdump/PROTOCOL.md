@@ -362,19 +362,47 @@ bReq=0x1A  wValue=0x0000        wIndex=0x0003
 ```
 
 - **wIndex 0x0000-0x0003 = gain of Mic 1-4.**
-- The **value field is 5 bits (bits 0-4, 0-31 ≈ 0-62 dB in 2-dB
-  steps)**; bits 0x20/0x40/0x00 cycle as a transaction counter (bits
-  5-6). The raw wValue looks like 0x2A, 0x0A, 0x49, 0x29, 0x09, ...
-  (counter 2/0/4 + value). **Mask with `& 0x1F` to recover the value**
-  (`& 0x0F` drops the 5th bit and destroyed values ≥ 16 — fixed
-  2026-08-22).
-- **Calibration (partial, 2026-08-22)**: `tools/usbdump/gainsweep_full.c`
-  swept raw 0-31 measuring the mic-noise RMS: ~2 dB/step in the mid
-  range, **saturation at raw ≥ 23** (values 24-31 change nothing — the
-  device clamps). The absolute raw→dB anchor is NOT yet measured: the
-  "raw 17 = 35 dB" note below is an UNVERIFIED assumption (dB/2).
-  Definitive calibration = a Windows capture with known dB values
-  (see WINDOWS-CAPTURE-PLAN.md, capture 3).
+- **CORRECTED 2026-09-13 — the byte is a PACKED coarse/fine gain, not
+  a 5-bit value plus a transaction counter.** Encoding:
+
+  ```
+  coarse = min(dB / 3, 20)      bits 0-4, 3 dB per step
+  fine   = dB - 3 * coarse      bits 5-7, the 0-2 dB remainder
+  wValue = (fine << 5) | coarse
+  ```
+
+  Above 60 dB `coarse` saturates at 20 and `fine` continues 3, 4, 5, so
+  65 dB is 0xB4. The full range is 0-65 dB in **1 dB steps**.
+
+  The earlier reading below ("bits 0x20/0x40/0x00 cycle as a
+  transaction counter", "mask with `& 0x1F` to recover the value") was
+  wrong, and the evidence against it was already in this file. The
+  example wValues quoted as proof of the counter — 0x2A, 0x0A, 0x49,
+  0x29, 0x09 — decode under the real encoding to **31, 30, 29, 28,
+  27 dB**: a monotonic 1 dB-per-step knob drag, not a cycling counter.
+  Re-run over the whole of `ctlout_gain_solo.txt` (59 distinct gain
+  writes on mic 1), the decoded series is a clean human fader drag
+  (31 down to 8, back up, down to 0, up to 7, down to 0) with **57 of
+  58 transitions being exactly 1 dB**, the single exception a skipped
+  dB during a fast drag.
+
+  Reported by David Fredman, who decoded it independently from his own
+  TotalMix captures and measured it on an original (non-FS) Babyface
+  Pro; confirmed here against the FS captures in this directory and by
+  a preamp-noise-floor sweep on the FS unit (Mic 2, nothing connected,
+  35-50 dB): **1.000 dB per dB of control** from 38 dB up, against
+  0.808 with the old encoding, where 16 requested values collapsed onto
+  7 hardware states and some +1 dB requests moved the gain *down*
+  because the rotating value landed in the fine-gain bits.
+
+- **Superseded calibration note (2026-08-22)**: `gainsweep_full.c`
+  swept raw 0-31 measuring the mic-noise RMS and reported ~2 dB/step
+  with saturation at raw ≥ 23. That sweep was walking the packed byte,
+  not a linear gain index, which is why the step looked like 2 dB and
+  why it appeared to clamp: raw ≥ 20 saturates `coarse`. The note said
+  at the time that "the absolute raw→dB anchor is NOT yet measured" and
+  that definitive calibration needed a Windows capture with known dB
+  values — that capture existed all along in `ctlout_gain_solo.txt`.
 
 ### Solo — cap_gain_solo.pcap
 

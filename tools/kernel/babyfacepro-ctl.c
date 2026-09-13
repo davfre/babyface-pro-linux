@@ -1724,8 +1724,9 @@ u8 bf_gain_raw(int mic, int db)
 }
 
 /* The preamp control's value already IS the gain in dB (0..65 for the mic
- * inputs, 0..9 for the instrument ones); the 3.25 dB/step quantisation the
- * hardware register imposes happens in bf_gain_raw().
+ * inputs, 0..9 for the instrument ones), and the hardware really does
+ * resolve every one of those steps - bf_gain_raw() packs it into the
+ * register's coarse and fine fields.
  */
 static const DECLARE_TLV_DB_SCALE(bf_gain_tlv, 0, 100, 0);
 
@@ -1746,9 +1747,8 @@ static int bf_gain_get(struct snd_kcontrol *kctl,
 	struct snd_usb_babyface *chip = snd_kcontrol_chip(kctl);
 	int mic = kctl->private_value;
 
-	/* chip->gain[] tracks the dB (the raw is derived at write time -
-	 * the 3.25 dB/step mic grid would otherwise make a +/-1 dB wheel
-	 * stick on a raw boundary).
+	/* chip->gain[] tracks the dB; the packed register value is derived
+	 * at write time (bf_gain_raw).
 	 */
 	ucontrol->value.integer.value[0] = chip->gain[mic];
 	return 0;
