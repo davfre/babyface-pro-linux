@@ -20,9 +20,8 @@ as 6. I included the OUT press to show the rest of the decode is fine,
 `st[1] & 0x07` going 5 -> 6.
 
 My unit came up with the flag already set, so `Front Panel Dim` read
-`on` with the LEDs lit and nothing dimmed. The flag only lights the
-indicator. Turning the level down is a separate set of writes, and
-nothing had made them.
+`on` and the LEDs were lit with nothing dimmed. Lighting the indicator
+and turning the level down are separate writes.
 
 Two smaller things from chasing it:
 
