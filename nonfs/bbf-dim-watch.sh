@@ -1,23 +1,30 @@
 #!/bin/sh
 # Make the front-panel DIM button act.
 #
-# The driver decodes the button into the read-only "Front Panel Dim"
-# control but never acts on it: that is left to TuxMix. With the kernel
-# driver alone the button does nothing.
+# The driver leaves acting on the front panel to TuxMix, so with the
+# kernel driver alone the DIM button does nothing. This does it.
 #
-# It does have a "Dim Switch" control, but this does not use it. That
-# one writes an absolute 0x0333 (819) to the Phones master, taken from
-# a capture made with the master near unity, rather than attenuating
-# whatever is there. Below -20 dB it therefore raises the level instead
-# of lowering it, and at the driver's own -30 dB default it is a boost
-# of about 6 dB. Measured on an original Babyface Pro.
+# Two things it deliberately does not use:
 #
-# So both outputs are handled here, relative to their current level:
-# save, divide by 10 (exactly -20 dB on the linear 0x2000 = 0 dB
-# scale), restore on release.
+#   "Front Panel Dim", the driver's sticky DIM state, reads st[1] & 0x20.
+#   On an original Babyface Pro that bit is set constantly, so the
+#   control is stuck on and never moves. DIM there is momentary only:
+#   st[3] flashes 0x60 per press. So this counts presses instead and
+#   keeps the state itself.
 #
-#   AN1/2  main out, control index 0
-#   PH3/4  phones, control index 1
+#   "Dim Switch", the driver's own DIM, writes an absolute 0x0333 (819)
+#   to the Phones master rather than attenuating what is there, and only
+#   touches output 1. Below -20 dB it raises the level instead of
+#   lowering it. So both outputs are handled here, relative to their
+#   current level: save, divide by 10 (exactly -20 dB on the linear
+#   0x2000 = 0 dB scale), restore on release.
+#
+#     AN1/2  main out, control index 0
+#     PH3/4  phones, control index 1
+#
+# Needs the local "notify on front-panel button presses" driver commit,
+# without which Front Panel Button updates silently and nothing here
+# ever wakes up.
 #
 # Usage: bbf-dim-watch.sh [card] [--phones-only|--main-only]
 set -eu
@@ -25,6 +32,8 @@ set -eu
 CARD="${1:-BabyfacePro}"
 MODE="${2:-both}"
 
+BTN_DIM=6			# BF_PANEL_BTN_DIM
+CTL_BTN="name=Front Panel Button"
 CTL_MAIN="name=AN1/2 Playback Volume"
 CTL_PHONES="name=PH3/4 Playback Volume,index=1"
 
@@ -38,7 +47,7 @@ amixer -c "$CARD" controls >/dev/null 2>&1 || die "no such card: $CARD"
 need() {
 	amixer -c "$CARD" cget "$1" >/dev/null 2>&1 || die "no control '$1' on $CARD"
 }
-need "name=Front Panel Dim"
+need "$CTL_BTN"
 if [ "$MODE" != "--phones-only" ]; then need "$CTL_MAIN"; fi
 if [ "$MODE" != "--main-only" ]; then need "$CTL_PHONES"; fi
 
@@ -52,8 +61,6 @@ read_ctl() {
 	printf '%s\n' "$_v"
 }
 
-# Save once per engage: a second engage without a release in between
-# must not latch the dimmed level as the thing to restore.
 dim_one() {
 	_cur=$(read_ctl "$1")
 	_l=${_cur%%,*}
@@ -63,9 +70,6 @@ dim_one() {
 }
 
 engage() {
-	if [ -n "$saved_main$saved_phones" ]; then
-		return 0
-	fi
 	if [ "$MODE" != "--phones-only" ]; then
 		saved_main=$(dim_one "$CTL_MAIN")
 	fi
@@ -91,35 +95,30 @@ case "$CARD" in
 *)	CTL="hw:$CARD" ;;
 esac
 
-last=$(read_ctl "name=Front Panel Dim")
-
-# The loop runs in the pipeline's subshell, so the saved levels and the
-# trap both have to live in here with it.
+# The loop runs in the pipeline's subshell, so the state and the trap
+# both have to live in here with it.
 alsactl monitor "$CTL" | {
 	saved_main=''
 	saved_phones=''
+	dimmed=0
 
 	# Without this, stopping the service while dimmed would leave the
 	# outputs 20 dB down with nothing left running to put them back.
 	trap 'release; exit 0' INT TERM
 
-	# Apply the button's current state rather than waiting for the next
-	# press, or starting up with DIM already engaged would look dead
-	# until it had been pressed twice.
-	if [ "$last" = "on" ]; then
-		engage
-	fi
-
-	while read -r _; do
-		now=$(read_ctl "name=Front Panel Dim")
-		if [ "$now" = "$last" ]; then
-			continue
-		fi
-		last="$now"
-		case "$now" in
-		on)	engage ;;
-		off)	release ;;
+	while read -r line; do
+		case "$line" in
+		*"Front Panel Button"*)	;;
+		*)			continue ;;
 		esac
+		[ "$(read_ctl "$CTL_BTN")" = "$BTN_DIM" ] || continue
+		if [ "$dimmed" = 0 ]; then
+			engage
+			dimmed=1
+		else
+			release
+			dimmed=0
+		fi
 	done
 
 	# Falling out means alsactl stopped. The loop's own status is 0, so
