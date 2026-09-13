@@ -718,19 +718,17 @@ static int bf_trim_put(struct snd_kcontrol *kctl, struct snd_ctl_elem_value *uco
  * TotalMix's Trim doesn't reach other outputs either, per the
  * already-verified Rust reference).
  *
- * TWO KNOWN LIMITATIONS, kept rather than silently hidden:
- * 1. Trim is a genuinely SHARED value per pair on real hardware (one
- *    write always touches both channels' registers) but is exposed
- *    here as 2 INDEPENDENT ALSA controls (one per channel, matching
- *    `bf_gain_put`'s own per-mic pattern and this file's already-
- *    shipped `InputChannel::trim` model, which is likewise
- *    per-channel) - setting AN1's control then AN2's independently
- *    doesn't fail, but the second write wins for BOTH channels on the
- *    wire even though `chip->trim[]` still tracks them as if
- *    independent. Not a new problem: `tuxmix-usb`'s own Rust model has
- *    the identical characteristic already: kept for parity rather than
- *    diverging from the reference this was ported from.
- * 2. Same class as Phase (see `bf_phase_apply`'s own comment):
+ * Trim is a genuinely SHARED value per pair on real hardware (one
+ * write always touches both channels' registers) but is exposed as 2
+ * per-channel ALSA controls, one per input strip. `bf_trim_put` keeps
+ * the pair's two cache entries equal and notifies the sibling control,
+ * so the cache never claims a per-channel split the hardware cannot
+ * represent - and `bf_state_apply_flags`, which replays the pair from
+ * its even index, always replays the value that is actually on the
+ * wire.
+ *
+ * ONE KNOWN LIMITATION, kept rather than silently hidden:
+ *    Same class as Phase (see `bf_phase_apply`'s own comment):
  *    `chip->xpoint[0][mic][0]` is read here for the CURRENT fader
  *    value but never written back - the standard-map register ends up
  *    holding fader+trim while the cache still holds the plain fader,
@@ -810,6 +808,7 @@ static int bf_trim_put(struct snd_kcontrol *kctl, struct snd_ctl_elem_value *uco
 {
 	struct snd_usb_babyface *chip = snd_kcontrol_chip(kctl);
 	int mic = kctl->private_value;
+	int sib = mic ^ 1;
 	int db = ucontrol->value.integer.value[0];
 	int ret = 0;
 
@@ -822,10 +821,19 @@ static int bf_trim_put(struct snd_kcontrol *kctl, struct snd_ctl_elem_value *uco
 	ret = bf_trim_apply(chip, mic, db * 2);
 	if (ret < 0)
 		goto out;
+	/* One register per pair on the wire, so both channels of the pair
+	 * really did change: mirror the cache (the state restore replays
+	 * the pair from the even index) and tell user space about the
+	 * sibling control.
+	 */
 	chip->trim[mic] = db;
+	chip->trim[sib] = db;
 	ret = 1;
 out:
 	mutex_unlock(&chip->mutex);
+	if (ret == 1 && chip->trim_kctl[sib])
+		snd_ctl_notify(chip->card, SNDRV_CTL_EVENT_MASK_VALUE,
+			       &chip->trim_kctl[sib]->id);
 	return ret;
 }
 
@@ -902,6 +910,7 @@ int babyface_create_xpoints(struct snd_usb_babyface *chip)
 			.put = bf_trim_put,
 			.private_value = src,
 		}, chip);
+		chip->trim_kctl[src] = kctl;
 		strscpy(kctl->id.name, bf_sources[src].name, sizeof(kctl->id.name));
 		strlcat(kctl->id.name, " Trim Volume", sizeof(kctl->id.name));
 		err = snd_ctl_add(chip->card, kctl);

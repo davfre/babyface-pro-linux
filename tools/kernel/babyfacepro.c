@@ -433,13 +433,16 @@ int bf_state_apply_flags(struct snd_usb_babyface *chip)
 
 	/* Re-apply any non-zero Trim (fader+trim combined, same reasoning
 	 * as phase - see bf_trim_apply's own comment). Only the pair's
-	 * even index needs to fire this (it always writes both channels).
+	 * even index needs to fire this (it always writes both channels),
+	 * and bf_trim_put keeps both entries of a pair equal, so the even
+	 * index holds the value that is really on the wire even when the
+	 * odd channel's control was the one the user touched.
 	 */
 	{
 		int mic;
 
 		for (mic = 0; mic < 4; mic += 2) {
-			if (!chip->trim[mic] && !chip->trim[mic + 1])
+			if (!chip->trim[mic])
 				continue;
 			ret = bf_trim_apply(chip, mic, chip->trim[mic] * 2);
 			if (ret < 0)

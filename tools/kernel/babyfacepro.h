@@ -306,8 +306,11 @@ struct snd_usb_babyface {
 					 * this implies.
 					 */
 	int trim[4];			/* Trim (T), dB (-65..+6), AN1-4;
-					 * same "wire-only" caveat as phase -
-					 * see bf_trim_apply's own comment.
+					 * one shared register per pair, so
+					 * both entries of a pair are kept
+					 * equal; same "wire-only" caveat as
+					 * phase - see bf_trim_apply's own
+					 * comment.
 					 */
 	int pitch;			/* varispeed in 0.1% (-500..+500) */
 	bool loopback[6];
@@ -374,6 +377,7 @@ struct snd_usb_babyface {
 					 * so the input VU follows the wheel)
 					 */
 	struct snd_kcontrol *panel_kctl[7]; /* for snd_ctl_notify */
+	struct snd_kcontrol *trim_kctl[4];  /* for snd_ctl_notify */
 };
 
 struct bf_saved {
