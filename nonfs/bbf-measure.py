@@ -1,6 +1,17 @@
 #!/usr/bin/env python3
-"""bbf-measure v2 -- measurement probes for the RME Babyface Pro under
+"""bbf-measure -- measurement probes for the RME Babyface Pro under
 snd-usb-babyface-pro.
+
+START HERE.  Two tests need no cable, and they are the ones behind the
+numbers reported upstream:
+
+  --tests digital     output master law, through the device's own Loopback
+  --tests noise       mic gain law, from the preamp's own noise floor
+
+Two minutes each, nothing plugged in.  Everything else needs an output
+patched to input 1 and is harder to read correctly: see METHOD.md for
+three findings the cable tests gave that turned out to be measurement
+artefacts rather than hardware behaviour.
 
 Supersedes the ad-hoc bbf-masterlaw.py / bbf-gainlaw.py / bbf-looplin.py.
 Versioned deliberately: the script is part of the result, so it should not
@@ -22,15 +33,17 @@ TESTS
              digital tone amplitude varies.  Needs the cable.
   gain       gain law, one point per register step.  Needs the cable.
   pad        A/B the PAD relay at a fixed operating point.  Needs the cable.
+  padsweep   PAD attenuation across gain settings.  Needs the cable.
 
 CABLE TESTS EXPECT: an analog output patched to input 1, PAD ON, PHANTOM
 POWER OFF.  Check phantom before connecting anything -- 48 V into a line
 output is the one combination here that can damage hardware.
 
 EXAMPLES
-  ./bbf-measure-v2.py --tests digital
-  ./bbf-measure-v2.py --tests noise
-  ./bbf-measure-v2.py --cable --tests linearity gain pad
+  ./bbf-measure.py --tests digital
+  ./bbf-measure.py --tests noise
+  ./bbf-measure.py --cable --tests pad
+  ./bbf-measure.py --cable --tests linearity gain padsweep
 """
 import argparse
 import array
@@ -499,7 +512,7 @@ def main():
     global PAD_MASTER, GAIN_MASTER, GAIN_STEP, GAIN_FROM, GAIN_TO
     ap = argparse.ArgumentParser(
         description="Babyface Pro measurement probes (v%s)" % VERSION)
-    ap.add_argument("--card", default="FS",
+    ap.add_argument("--card", default="BabyfacePro",
                     help="ALSA card id or index (default: FS, by name, so "
                          "it survives reloads that renumber the card)")
     ap.add_argument("--cable", action="store_true",
