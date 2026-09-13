@@ -12,8 +12,8 @@ I spent the morning taking measurements of the non-FS Pro. Here's what I found:
 On the last one: the hardware does 1 dB steps, but the control only reaches 21
 positions, about 3 dB apart. I captured what TotalMix writes on Windows, and the
 value packs a coarse and a fine field into one byte. The fine part is currently
-being overwritten by the rotating counter. That is the other PR, with
-measurements either side of the change.
+being overwritten by the rotating counter. That is #2, with measurements either
+side of the change.
 
 ## Smaller things
 
@@ -54,5 +54,5 @@ Happy to share the scripts and the raw output if they are any use. Your
 captures show what gets written to the device; these measure what comes out of
 it. Neither needs a physical loopback: the master law goes through the device's
 own Loopback, and the gain sweep measures the preamp's own noise with nothing
-connected. A couple of minutes each, if you want to check the numbers in the
-other PR against your own unit.
+connected. A couple of minutes each, if you want to check the numbers in #2
+against your own unit.
