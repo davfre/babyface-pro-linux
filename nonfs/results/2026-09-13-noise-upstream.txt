@@ -1,0 +1,25 @@
+bbf-measure v3.2, card BabyfacePro, no cable
+
+== noise: gain law from the preamp noise floor ==
+   (no cable; the preamp amplifies its own input noise, so the
+    measured floor tracks real gain at the top of the range)
+
+  db set     measured       step
+   ramped 0 -> 35 dB, now settling
+      35       -87.21   settling
+      35       -91.48      -4.27
+      35       -91.94      -0.46
+      35       -91.97      -0.02
+   settled, within 0.25 dB
+      35       -91.96           
+      40       -86.88      +5.08
+      45       -81.90      +4.98
+      50       -76.92      +4.99
+      55       -71.82      +5.10
+      60       -67.08      +4.74
+      65       -62.13      +4.96
+
+   0.994 dB per dB of control over the top of the range (30 dB and up)
+   below that the converter's own noise floor dominates and the curve flattens
+
+restoring: gain 0, loopback off, master 256

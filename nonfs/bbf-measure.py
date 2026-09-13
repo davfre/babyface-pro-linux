@@ -53,6 +53,14 @@ import sys
 import time
 import wave
 
+# Python block-buffers stdout when it is a pipe, so a run through tee or
+# into a file appears to hang and then dump.  These runs take minutes and
+# you want to watch them.
+try:
+    sys.stdout.reconfigure(line_buffering=True)
+except AttributeError:
+    pass
+
 VERSION = "3.2"
 RATE = 48000
 FS = 2.0 ** 31
@@ -75,6 +83,8 @@ PEAK_LO, PEAK_HI = 0.15, 0.60
 GAIN_MAX_DB = 65             # the driver's declared ceiling; never exceeded
 PAD_MASTER = 64              # fixed operating point for the PAD A/B
 GAIN_STEP = 5                # dB between points in the gain sweep
+SETTLE_TOL = 0.25            # dB; warm-up ends when readings stop moving
+SETTLE_MAX = 8               # give up after this many warm-up reads
 GAIN_MASTER = None           # fixed master for the gain sweep, or None to autolevel
 GAIN_FROM = 0                # gain sweep range, dB
 GAIN_TO = None               # defaults to GAIN_MAX_DB
@@ -84,6 +94,23 @@ GAIN_TO = None               # defaults to GAIN_MAX_DB
 
 def db_of_master(raw):
     return 6 * math.log2(raw / float(MASTER_UNITY))
+
+
+def ramp_gain(dev, cur, target, ms=50):
+    """Walk the gain 1 dB at a time, the finest the control goes.
+
+    A jump straight to a new gain puts a step at the preamp output that
+    decays through the input coupling over seconds, and the capture window
+    lands in its tail: early points read too loud.  Measured, a sweep that
+    jumped to its first point fitted 0.73 dB/dB, and 0.99 once settled.
+    Stepping 1 dB at a time keeps every transient as small as the hardware
+    allows.
+    """
+    stride = 1 if target >= cur else -1
+    for g in range(cur + stride, target + stride, stride):
+        dev.gain(g)
+        time.sleep(ms / 1000.0)
+    return target
 
 
 def gain_points(step=5):
@@ -273,8 +300,36 @@ def t_noise(dev):
     dev.master(MASTER_SAFE)
     print("\n%8s %12s %10s" % ("db set", "measured", "step"))
     pts, prev = [], None
+    first = True
+    cur = 0
+    dev.gain(0)
     for db in gain_points(GAIN_STEP):
-        dev.gain(db)
+        cur = ramp_gain(dev, cur, db)
+        if first:
+            # At the first point, keep reading until two consecutive
+            # measurements agree, so the sweep starts from a flat reading
+            # rather than after a guess at how long to wait.  Discarded,
+            # but printed, so what was thrown away is visible.
+            print("   ramped 0 -> %d dB, now settling" % db)
+            sys.stdout.flush()
+            last = None
+            for _ in range(SETTLE_MAX):
+                w, _unused = dev.capture(play=False)
+                if w is None:
+                    break
+                d = None if last is None else w - last
+                print("%8d %12.2f %10s" % (
+                    db, w, "settling" if d is None else "%+.2f" % d))
+                sys.stdout.flush()
+                if d is not None and abs(d) < SETTLE_TOL:
+                    print("   settled, within %.2f dB" % SETTLE_TOL)
+                    break
+                last = w
+            else:
+                print("   still moving after %d reads, carrying on anyway"
+                      % SETTLE_MAX)
+            sys.stdout.flush()
+            first = False
         rms, peak = dev.capture(play=False)
         if rms is None:
             print("%8d %12s" % (db, "silence"))
@@ -509,7 +564,7 @@ TESTS = {
 
 
 def main():
-    global PAD_MASTER, GAIN_MASTER, GAIN_STEP, GAIN_FROM, GAIN_TO
+    global PAD_MASTER, GAIN_MASTER, GAIN_STEP, GAIN_FROM, GAIN_TO, SETTLE_TOL
     ap = argparse.ArgumentParser(
         description="Babyface Pro measurement probes (v%s)" % VERSION)
     ap.add_argument("--card", default="BabyfacePro",
@@ -528,6 +583,9 @@ def main():
                     help="last dB of the gain sweep (default 65)")
     ap.add_argument("--gain-step", type=int, default=GAIN_STEP,
                     help="dB between points in the gain sweep (default 5)")
+    ap.add_argument("--settle-tol", type=float, default=SETTLE_TOL,
+                    help="dB; the warm-up ends when two consecutive reads "
+                         "agree this closely (default %(default)s)")
     ap.add_argument("--pad-master", type=int, default=PAD_MASTER,
                     help="fixed master raw for the pad test (default 64); "
                          "lower it if either state clips")
@@ -535,6 +593,7 @@ def main():
                     choices=sorted(TESTS) + ["all"],
                     help="which tests to run (default: digital)")
     args = ap.parse_args()
+    SETTLE_TOL = args.settle_tol
     PAD_MASTER = args.pad_master
     GAIN_MASTER = args.gain_master
     GAIN_STEP = args.gain_step

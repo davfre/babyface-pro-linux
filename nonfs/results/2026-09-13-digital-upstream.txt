@@ -1,0 +1,18 @@
+bbf-measure v3.2, card BabyfacePro, no cable
+
+== digital: output master law through the device Loopback ==
+   (no cable needed; this is the purely digital path)
+
+     raw   expect dB      measured     delta
+   16384        6.00        -51.31    -37.31
+    8192        0.00        -57.31    -37.31
+    4096       -6.00        -63.31    -37.31
+    2048      -12.00        -69.31    -37.31
+    1024      -18.00        -75.31    -37.31
+     512      -24.00        -81.31    -37.31
+     256      -30.00        -87.31    -37.31
+
+   slope 1.000 dB/dB, delta spread 0.00 dB
+   (a constant delta is just path gain; the spread is what matters)
+
+restoring: gain 0, loopback off, master 256
