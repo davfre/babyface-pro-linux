@@ -1,0 +1,48 @@
+bbf-gainlaw.py (superseded; superseded/bbf-gainlaw.py is a LATER edit
+of the same filename and does NOT reproduce this exactly -- the script
+was mutated in place before this was archived.  bbf-measure-v2.3.py
+--cable --tests gain is the maintained equivalent.)
+
+card FS (RME Babyface Pro, 2015 non-FS, proprietary mode 2a39:3fc0)
+CABLE: AN1/2 XLR out -> input 1/2, PAD on, phantom off
+master raw 4 (-66 dB), tone 997 Hz at -20.0 dBFS
+one point per gain register step
+
+   raw   db set   claim dB   measured      step
+     0        0       0.00     -87.07
+     1        2       3.25     -84.07     +2.99
+     2        5       6.50     -81.07     +3.00
+     3        9       9.75     -77.96     +3.11
+     4       12      13.00     -75.01     +2.95
+     5       15      16.25     -72.09     +2.92
+     6       18      19.50     -69.00     +3.09
+     7       22      22.75     -66.06     +2.95
+     8       25      26.00     -63.15     +2.91
+     9       28      29.25     -60.10     +3.05
+    10       31      32.50     -57.17     +2.93
+    11       35      35.75     -54.29     +2.89
+    12       38      39.00     -51.19     +3.10
+    13       41      42.25     -48.30     +2.88
+    14       44      45.50     -45.48     +2.83
+    15       48      48.75     -42.49     +2.98
+    16       51      52.00     -39.72     +2.77
+    17       54      55.25     -37.05     +2.67
+    18       57      58.50     -34.22     +2.83
+    19       61      61.75     -31.73     +2.49
+    20       64      65.00     -29.42     +2.31
+
+least-squares fits over this data:
+   raw  0..20   2.916
+   raw  0..15   2.972   <- valid region
+   raw 12..20   2.746   (rig artifact, see below)
+   raw 14..20   2.686   (rig artifact, see below)
+
+span raw 0..20: 57.65 dB measured, 65 dB claimed.
+
+The taper over the top five steps appears ONLY in this cable rig.  The
+no-cable noise measurement is cleanest in exactly that region and shows
+no taper (2.987 over raw 14..20), so the taper is an artifact here and
+not preamp curvature.
+
+The two rigs are valid over complementary ranges and agree where each
+is valid: 2.972 (cable, raw 0-15) and 2.968 (noise, raw 12-20).

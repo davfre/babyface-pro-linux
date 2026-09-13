@@ -1,0 +1,21 @@
+bbf-measure v2.0  --tests digital
+card FS (RME Babyface Pro, 2015 non-FS, proprietary mode 2a39:3fc0)
+no cable; signal path is the device's own digital Loopback
+tone 997 Hz at -20.0 dBFS peak
+
+     raw   expect dB      measured     delta
+   16384        6.00        -17.01     -3.01
+    8192        0.00        -23.01     -3.01
+    4096       -6.00        -29.01     -3.01
+    2048      -12.00        -35.01     -3.01
+    1024      -18.00        -41.01     -3.01
+     512      -24.00        -47.01     -3.01
+     256      -30.00        -53.01     -3.01
+
+slope 1.000 dB/dB, delta spread 0.00 dB
+
+The constant -3.01 offset is the crest factor of a sine (RMS measured,
+peak-referenced tone label), not path loss.  The 16-bit master law
+raw = 8192 * 2**(dB/6) is exact on this unit.
+
+Reproduced three times across the session, identical each time.

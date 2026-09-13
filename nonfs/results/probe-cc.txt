@@ -1,0 +1,653 @@
+=== date / kernel ===
+2026-09-13T07:39:47+01:00
+Linux cachyos-x8664 7.2.4-1-cachyos #1 SMP PREEMPT_DYNAMIC Thu, 10 Sep 2026 17:19:37 +0000 x86_64 GNU/Linux
+
+=== distro ===
+NAME="CachyOS Linux"
+PRETTY_NAME="CachyOS"
+ID=cachyos
+ID_LIKE=arch
+
+=== kernel build tree present? (needed to build the module) ===
+/lib/modules/7.2.4-1-cachyos/build
+
+=== RME devices (2a39) ===
+Bus 003 Device 008: ID 2a39:3fb0 RME Babyface Pro (Class Compliant Mode)
+
+=== full descriptors ===
+
+Bus 003 Device 008: ID 2a39:3fb0 RME Babyface Pro (Class Compliant Mode)
+Negotiated speed: High Speed (480Mbps)
+Device Descriptor:
+  bLength                18
+  bDescriptorType         1
+  bcdUSB               2.00
+  bDeviceClass          239 Miscellaneous Device
+  bDeviceSubClass         2 [unknown]
+  bDeviceProtocol         1 Interface Association
+  bMaxPacketSize0        64
+  idVendor           0x2a39 RME
+  idProduct          0x3fb0 Babyface Pro (Class Compliant Mode)
+  bcdDevice            0.01
+  iManufacturer           1 RME
+  iProduct                2 Babyface Pro (70784522)
+  iSerial                 3 BCB2604A1527EC8
+  bNumConfigurations      1
+  Configuration Descriptor:
+    bLength                 9
+    bDescriptorType         2
+    wTotalLength       0x01a7
+    bNumInterfaces          4
+    bConfigurationValue     1
+    iConfiguration          0 
+    bmAttributes         0x80
+      (Bus Powered)
+    MaxPower              100mA
+    Interface Association:
+      bLength                 8
+      bDescriptorType        11
+      bFirstInterface         0
+      bInterfaceCount         4
+      bFunctionClass          1 Audio
+      bFunctionSubClass       0 [unknown]
+      bFunctionProtocol      32 
+      iFunction               0 
+    Interface Descriptor:
+      bLength                 9
+      bDescriptorType         4
+      bInterfaceNumber        0
+      bAlternateSetting       0
+      bNumEndpoints           0
+      bInterfaceClass         1 Audio
+      bInterfaceSubClass      1 Control Device
+      bInterfaceProtocol     32 
+      iInterface              0 
+      AudioControl Interface Descriptor:
+        bLength                 9
+        bDescriptorType        36
+        bDescriptorSubtype      1 (HEADER)
+        bcdADC               2.00
+        bCategory               8
+        wTotalLength       0x0055
+        bmControls           0x00
+      AudioControl Interface Descriptor:
+        bLength                 8
+        bDescriptorType        36
+        bDescriptorSubtype     10 (CLOCK_SOURCE)
+        bClockID                1
+        bmAttributes            3 Internal programmable clock 
+        bmControls           0x03
+          Clock Frequency Control (read/write)
+        bAssocTerminal          0
+        iClockSource            0 
+      AudioControl Interface Descriptor:
+        bLength                17
+        bDescriptorType        36
+        bDescriptorSubtype      2 (INPUT_TERMINAL)
+        bTerminalID             3
+        wTerminalType      0x0101 USB Streaming
+        bAssocTerminal          0
+        bCSourceID              1
+        bNrChannels            12
+        bmChannelConfig    0x00000000
+        iChannelNames           0 
+        bmControls         0x0000
+        iTerminal               0 
+      AudioControl Interface Descriptor:
+        bLength                17
+        bDescriptorType        36
+        bDescriptorSubtype      2 (INPUT_TERMINAL)
+        bTerminalID             5
+        wTerminalType      0x0201 Microphone
+        bAssocTerminal          0
+        bCSourceID              1
+        bNrChannels            12
+        bmChannelConfig    0x00000000
+        iChannelNames           0 
+        bmControls         0x0000
+        iTerminal               0 
+      AudioControl Interface Descriptor:
+        bLength                12
+        bDescriptorType        36
+        bDescriptorSubtype      3 (OUTPUT_TERMINAL)
+        bTerminalID             4
+        wTerminalType      0x0301 Speaker
+        bAssocTerminal          0
+        bSourceID               2
+        bCSourceID              1
+        bmControls         0x0000
+        iTerminal               0 
+      AudioControl Interface Descriptor:
+        bLength                12
+        bDescriptorType        36
+        bDescriptorSubtype      3 (OUTPUT_TERMINAL)
+        bTerminalID             6
+        wTerminalType      0x0101 USB Streaming
+        bAssocTerminal          0
+        bSourceID               5
+        bCSourceID              1
+        bmControls         0x0000
+        iTerminal               0 
+    Interface Descriptor:
+      bLength                 9
+      bDescriptorType         4
+      bInterfaceNumber        1
+      bAlternateSetting       0
+      bNumEndpoints           0
+      bInterfaceClass         1 Audio
+      bInterfaceSubClass      2 Streaming
+      bInterfaceProtocol     32 
+      iInterface              0 
+    Interface Descriptor:
+      bLength                 9
+      bDescriptorType         4
+      bInterfaceNumber        1
+      bAlternateSetting       1
+      bNumEndpoints           2
+      bInterfaceClass         1 Audio
+      bInterfaceSubClass      2 Streaming
+      bInterfaceProtocol     32 
+      iInterface              0 
+      AudioStreaming Interface Descriptor:
+        bLength                16
+        bDescriptorType        36
+        bDescriptorSubtype      1 (AS_GENERAL)
+        bTerminalLink           3
+        bmControls           0x00
+        bFormatType             1
+        bmFormats          0x00000001
+          PCM
+        bNrChannels             2
+        bmChannelConfig    0x00000003
+          Front Left (FL)
+          Front Right (FR)
+        iChannelNames           0 
+      AudioStreaming Interface Descriptor:
+        bLength                 6
+        bDescriptorType        36
+        bDescriptorSubtype      2 (FORMAT_TYPE)
+        bFormatType             1 (FORMAT_TYPE_I)
+        bSubslotSize            3
+        bBitResolution         24
+      Endpoint Descriptor:
+        bLength                 7
+        bDescriptorType         5
+        bEndpointAddress     0x03  EP 3 OUT
+        bmAttributes            5
+          Transfer Type            Isochronous
+          Synch Type               Asynchronous
+          Usage Type               Data
+        wMaxPacketSize     0x0096  1x 150 bytes
+        bInterval               1
+        AudioStreaming Endpoint Descriptor:
+          bLength                 8
+          bDescriptorType        37
+          bDescriptorSubtype      1 (EP_GENERAL)
+          bmAttributes         0x00
+          bmControls           0x00
+          bLockDelayUnits         0 Undefined
+          wLockDelay         0x0000
+      Endpoint Descriptor:
+        bLength                 7
+        bDescriptorType         5
+        bEndpointAddress     0x83  EP 3 IN
+        bmAttributes           17
+          Transfer Type            Isochronous
+          Synch Type               None
+          Usage Type               Feedback
+        wMaxPacketSize     0x0004  1x 4 bytes
+        bInterval               4
+    Interface Descriptor:
+      bLength                 9
+      bDescriptorType         4
+      bInterfaceNumber        1
+      bAlternateSetting       2
+      bNumEndpoints           2
+      bInterfaceClass         1 Audio
+      bInterfaceSubClass      2 Streaming
+      bInterfaceProtocol     32 
+      iInterface              0 
+      AudioStreaming Interface Descriptor:
+        bLength                16
+        bDescriptorType        36
+        bDescriptorSubtype      1 (AS_GENERAL)
+        bTerminalLink           3
+        bmControls           0x00
+        bFormatType             1
+        bmFormats          0x00000001
+          PCM
+        bNrChannels            12
+        bmChannelConfig    0x00000000
+        iChannelNames           0 
+      AudioStreaming Interface Descriptor:
+        bLength                 6
+        bDescriptorType        36
+        bDescriptorSubtype      2 (FORMAT_TYPE)
+        bFormatType             1 (FORMAT_TYPE_I)
+        bSubslotSize            3
+        bBitResolution         24
+      Endpoint Descriptor:
+        bLength                 7
+        bDescriptorType         5
+        bEndpointAddress     0x03  EP 3 OUT
+        bmAttributes            5
+          Transfer Type            Isochronous
+          Synch Type               Asynchronous
+          Usage Type               Data
+        wMaxPacketSize     0x0384  1x 900 bytes
+        bInterval               1
+        AudioStreaming Endpoint Descriptor:
+          bLength                 8
+          bDescriptorType        37
+          bDescriptorSubtype      1 (EP_GENERAL)
+          bmAttributes         0x00
+          bmControls           0x00
+          bLockDelayUnits         0 Undefined
+          wLockDelay         0x0000
+      Endpoint Descriptor:
+        bLength                 7
+        bDescriptorType         5
+        bEndpointAddress     0x83  EP 3 IN
+        bmAttributes           17
+          Transfer Type            Isochronous
+          Synch Type               None
+          Usage Type               Feedback
+        wMaxPacketSize     0x0004  1x 4 bytes
+        bInterval               4
+    Interface Descriptor:
+      bLength                 9
+      bDescriptorType         4
+      bInterfaceNumber        2
+      bAlternateSetting       0
+      bNumEndpoints           0
+      bInterfaceClass         1 Audio
+      bInterfaceSubClass      2 Streaming
+      bInterfaceProtocol     32 
+      iInterface              0 
+    Interface Descriptor:
+      bLength                 9
+      bDescriptorType         4
+      bInterfaceNumber        2
+      bAlternateSetting       1
+      bNumEndpoints           1
+      bInterfaceClass         1 Audio
+      bInterfaceSubClass      2 Streaming
+      bInterfaceProtocol     32 
+      iInterface              0 
+      AudioStreaming Interface Descriptor:
+        bLength                16
+        bDescriptorType        36
+        bDescriptorSubtype      1 (AS_GENERAL)
+        bTerminalLink           6
+        bmControls           0x00
+        bFormatType             1
+        bmFormats          0x00000001
+          PCM
+        bNrChannels            12
+        bmChannelConfig    0x00000000
+        iChannelNames           0 
+      AudioStreaming Interface Descriptor:
+        bLength                 6
+        bDescriptorType        36
+        bDescriptorSubtype      2 (FORMAT_TYPE)
+        bFormatType             1 (FORMAT_TYPE_I)
+        bSubslotSize            3
+        bBitResolution         24
+      Endpoint Descriptor:
+        bLength                 7
+        bDescriptorType         5
+        bEndpointAddress     0x84  EP 4 IN
+        bmAttributes            5
+          Transfer Type            Isochronous
+          Synch Type               Asynchronous
+          Usage Type               Data
+        wMaxPacketSize     0x0384  1x 900 bytes
+        bInterval               1
+        AudioStreaming Endpoint Descriptor:
+          bLength                 8
+          bDescriptorType        37
+          bDescriptorSubtype      1 (EP_GENERAL)
+          bmAttributes         0x00
+          bmControls           0x00
+          bLockDelayUnits         0 Undefined
+          wLockDelay         0x0000
+    Interface Descriptor:
+      bLength                 9
+      bDescriptorType         4
+      bInterfaceNumber        2
+      bAlternateSetting       2
+      bNumEndpoints           1
+      bInterfaceClass         1 Audio
+      bInterfaceSubClass      2 Streaming
+      bInterfaceProtocol     32 
+      iInterface              0 
+      AudioStreaming Interface Descriptor:
+        bLength                16
+        bDescriptorType        36
+        bDescriptorSubtype      1 (AS_GENERAL)
+        bTerminalLink           6
+        bmControls           0x00
+        bFormatType             1
+        bmFormats          0x00000001
+          PCM
+        bNrChannels             2
+        bmChannelConfig    0x00000003
+          Front Left (FL)
+          Front Right (FR)
+        iChannelNames           0 
+      AudioStreaming Interface Descriptor:
+        bLength                 6
+        bDescriptorType        36
+        bDescriptorSubtype      2 (FORMAT_TYPE)
+        bFormatType             1 (FORMAT_TYPE_I)
+        bSubslotSize            3
+        bBitResolution         24
+      Endpoint Descriptor:
+        bLength                 7
+        bDescriptorType         5
+        bEndpointAddress     0x84  EP 4 IN
+        bmAttributes            5
+          Transfer Type            Isochronous
+          Synch Type               Asynchronous
+          Usage Type               Data
+        wMaxPacketSize     0x0096  1x 150 bytes
+        bInterval               1
+        AudioStreaming Endpoint Descriptor:
+          bLength                 8
+          bDescriptorType        37
+          bDescriptorSubtype      1 (EP_GENERAL)
+          bmAttributes         0x00
+          bmControls           0x00
+          bLockDelayUnits         0 Undefined
+          wLockDelay         0x0000
+    Interface Descriptor:
+      bLength                 9
+      bDescriptorType         4
+      bInterfaceNumber        3
+      bAlternateSetting       0
+      bNumEndpoints           2
+      bInterfaceClass         1 Audio
+      bInterfaceSubClass      3 MIDI Streaming
+      bInterfaceProtocol      0 
+      iInterface              2 Babyface Pro (70784522)
+      MIDIStreaming Interface Descriptor:
+        bLength                 7
+        bDescriptorType        36
+        bDescriptorSubtype      1 (HEADER)
+        bcdADC               1.00
+        wTotalLength       0x0061
+      MIDIStreaming Interface Descriptor:
+        bLength                 9
+        bDescriptorType        36
+        bDescriptorSubtype      3 (MIDI_OUT_JACK)
+        bJackType               1 Embedded
+        bJackID                 3
+        bNrInputPins            1
+        baSourceID( 0)          2
+        BaSourcePin( 0)         1
+        iJack                   4 Port 1
+      MIDIStreaming Interface Descriptor:
+        bLength                 6
+        bDescriptorType        36
+        bDescriptorSubtype      2 (MIDI_IN_JACK)
+        bJackType               2 External
+        bJackID                 2
+        iJack                   4 Port 1
+      MIDIStreaming Interface Descriptor:
+        bLength                 9
+        bDescriptorType        36
+        bDescriptorSubtype      3 (MIDI_OUT_JACK)
+        bJackType               1 Embedded
+        bJackID                 7
+        bNrInputPins            1
+        baSourceID( 0)          6
+        BaSourcePin( 0)         1
+        iJack                   5 Port 2
+      MIDIStreaming Interface Descriptor:
+        bLength                 6
+        bDescriptorType        36
+        bDescriptorSubtype      2 (MIDI_IN_JACK)
+        bJackType               2 External
+        bJackID                 6
+        iJack                   5 Port 2
+      MIDIStreaming Interface Descriptor:
+        bLength                 6
+        bDescriptorType        36
+        bDescriptorSubtype      2 (MIDI_IN_JACK)
+        bJackType               1 Embedded
+        bJackID                 1
+        iJack                   4 Port 1
+      MIDIStreaming Interface Descriptor:
+        bLength                 9
+        bDescriptorType        36
+        bDescriptorSubtype      3 (MIDI_OUT_JACK)
+        bJackType               2 External
+        bJackID                 4
+        bNrInputPins            1
+        baSourceID( 0)          1
+        BaSourcePin( 0)         1
+        iJack                   4 Port 1
+      MIDIStreaming Interface Descriptor:
+        bLength                 6
+        bDescriptorType        36
+        bDescriptorSubtype      2 (MIDI_IN_JACK)
+        bJackType               1 Embedded
+        bJackID                 5
+        iJack                   5 Port 2
+      MIDIStreaming Interface Descriptor:
+        bLength                 9
+        bDescriptorType        36
+        bDescriptorSubtype      3 (MIDI_OUT_JACK)
+        bJackType               2 External
+        bJackID                 8
+        bNrInputPins            1
+        baSourceID( 0)          5
+        BaSourcePin( 0)         1
+        iJack                   5 Port 2
+      Endpoint Descriptor:
+        bLength                 9
+        bDescriptorType         5
+        bEndpointAddress     0x07  EP 7 OUT
+        bmAttributes            2
+          Transfer Type            Bulk
+          Synch Type               None
+          Usage Type               Data
+        wMaxPacketSize     0x0200  1x 512 bytes
+        bInterval               0
+        bRefresh                0
+        bSynchAddress           0
+        MIDIStreaming Endpoint Descriptor:
+          bLength                 6
+          bDescriptorType        37
+          bDescriptorSubtype      1 (Invalid)
+          bNumEmbMIDIJack         2
+          baAssocJackID( 0)       1
+          baAssocJackID( 1)       5
+      Endpoint Descriptor:
+        bLength                 9
+        bDescriptorType         5
+        bEndpointAddress     0x86  EP 6 IN
+        bmAttributes            2
+          Transfer Type            Bulk
+          Synch Type               None
+          Usage Type               Data
+        wMaxPacketSize     0x0200  1x 512 bytes
+        bInterval               0
+        bRefresh                0
+        bSynchAddress           0
+        MIDIStreaming Endpoint Descriptor:
+          bLength                 6
+          bDescriptorType        37
+          bDescriptorSubtype      1 (Invalid)
+          bNumEmbMIDIJack         2
+          baAssocJackID( 0)       3
+          baAssocJackID( 1)       7
+Device Qualifier (for other device speed):
+  bLength                10
+  bDescriptorType         6
+  bcdUSB               2.00
+  bDeviceClass          239 Miscellaneous Device
+  bDeviceSubClass         2 [unknown]
+  bDeviceProtocol         1 Interface Association
+  bMaxPacketSize0        64
+  bNumConfigurations      0
+Device Status:     0x0e00
+  (Bus Powered)
+
+=== sysfs summary ===
+--- /sys/bus/usb/devices/3-5.1.2/
+idVendor         2a39
+idProduct        3fb0
+bcdDevice        0001
+manufacturer     RME
+product          Babyface Pro (70784522)
+serial           BCB2604A1527EC8
+version           2.00
+speed            480
+bNumInterfaces    4
+drivers bound:
+../../../../../../../../../../../bus/usb/drivers/snd-usb-audio
+../../../../../../../../../../../bus/usb/drivers/snd-usb-audio
+../../../../../../../../../../../bus/usb/drivers/snd-usb-audio
+../../../../../../../../../../../bus/usb/drivers/snd-usb-audio
+
+=== ALSA cards ===
+ 0 [NVidia         ]: HDA-Intel - HDA NVidia
+                      HDA NVidia at 0xdf080000 irq 140
+ 1 [Generic        ]: HDA-Intel - HD-Audio Generic
+                      HD-Audio Generic at 0xdf580000 irq 142
+ 2 [Camera         ]: USB-Audio - UGREEN Camera
+                      UGREEN Camera UGREEN Camera at usb-0000:0c:00.0-5, high speed
+ 3 [Pro70784522    ]: USB-Audio - Babyface Pro (70784522)
+                      RME Babyface Pro (70784522) at usb-0000:0e:00.0-5.1.2, high speed
+ 4 [USBMIDI        ]: USB-Audio - USB-MIDI
+                      USB-MIDI at usb-0000:0e:00.0-5.1.3, full speed
+--- /proc/asound/card2/stream0
+UGREEN Camera UGREEN Camera at usb-0000:0c:00.0-5, high speed : USB Audio
+
+Capture:
+  Status: Stop
+  Interface 3
+    Altset 1
+    Format: S16_LE
+    Channels: 2
+    Endpoint: 0x84 (4 IN) (ASYNC)
+    Rates: 8000, 11025, 16000, 22050, 24000, 44100, 48000
+    Data packet interval: 1000 us
+    Bits: 16
+    Channel map: FL FR
+--- /proc/asound/card3/stream0
+RME Babyface Pro (70784522) at usb-0000:0e:00.0-5.1.2, high speed : USB Audio
+
+Playback:
+  Status: Running
+    Interface = 1
+    Altset = 2
+    Packet Size = 324
+    Momentary freq = 44099 Hz (0x5.8328)
+    Feedback Format = 16.16
+  Interface 1
+    Altset 1
+    Format: S24_3LE
+    Channels: 2
+    Endpoint: 0x03 (3 OUT) (ASYNC)
+    Rates: 44100, 48000, 88200, 96000, 176400, 192000
+    Data packet interval: 125 us
+    Bits: 24
+    Channel map: FL FR
+    Sync Endpoint: 0x83 (3 IN)
+    Sync EP Interface: 1
+    Sync EP Altset: 1
+    Implicit Feedback Mode: No
+  Interface 1
+    Altset 2
+    Format: S24_3LE
+    Channels: 12
+    Endpoint: 0x03 (3 OUT) (ASYNC)
+    Rates: 44100, 48000, 88200, 96000, 176400, 192000
+    Data packet interval: 125 us
+    Bits: 24
+    Channel map: FL FR FC LFE RL RR FLC FRC RC SL SR TC
+    Sync Endpoint: 0x83 (3 IN)
+    Sync EP Interface: 1
+    Sync EP Altset: 2
+    Implicit Feedback Mode: No
+
+Capture:
+  Status: Running
+    Interface = 2
+    Altset = 1
+    Packet Size = 324
+    Momentary freq = 44100 Hz (0x5.8333)
+  Interface 2
+    Altset 1
+    Format: S24_3LE
+    Channels: 12
+    Endpoint: 0x84 (4 IN) (ASYNC)
+    Rates: 44100, 48000, 88200, 96000, 176400, 192000
+    Data packet interval: 125 us
+    Bits: 24
+    Channel map: FL FR FC LFE RL RR FLC FRC RC SL SR TC
+  Interface 2
+    Altset 2
+    Format: S24_3LE
+    Channels: 2
+    Endpoint: 0x84 (4 IN) (ASYNC)
+    Rates: 44100, 48000, 88200, 96000, 176400, 192000
+    Data packet interval: 125 us
+    Bits: 24
+    Channel map: FL FR
+
+=== modules loaded ===
+snd_usb_audio         659456  4
+snd_usbmidi_lib        57344  1 snd_usb_audio
+snd_ump                40960  1 snd_usb_audio
+snd_rawmidi            53248  3 snd_seq_midi,snd_usbmidi_lib,snd_ump
+snd_hwdep              24576  2 snd_usb_audio,snd_hda_codec
+mc                     94208  5 videodev,snd_usb_audio,videobuf2_v4l2,uvcvideo,videobuf2_common
+snd_pcm               237568  7 snd_hda_codec_hdmi,snd_hda_intel,snd_usb_audio,snd_hda_codec,snd_hda_core
+snd                   163840  25 snd_seq,snd_seq_device,snd_hda_codec_hdmi,snd_hwdep,snd_hda_intel,snd_usb_audio,snd_usbmidi_lib,snd_hda_codec,snd_timer,snd_ump,snd_pcm,snd_rawmidi
+
+=== recent kernel messages ===
+[    4.896667] usb 3-5.1.4.3: New USB device found, idVendor=05ac, idProduct=029c, bcdDevice= 4.20
+[    4.923956] usb 3-5.1.4.3: New USB device strings: Mfr=1, Product=2, SerialNumber=3
+[    4.923960] usb 3-5.1.4.3: Product: Magic Keyboard
+[    4.923962] usb 3-5.1.4.3: Manufacturer: Apple Inc.
+[    4.923964] usb 3-5.1.4.3: SerialNumber: F0T3502RG2W139XAT
+[    4.960639] input: Apple Inc. Magic Keyboard as /devices/pci0000:00/0000:00:02.1/0000:03:00.0/0000:04:0c.0/0000:0e:00.0/usb3/3-5/3-5.1/3-5.1.4/3-5.1.4.3/3-5.1.4.3:1.0/0003:05AC:029C.0005/input/input4
+[    4.960713] apple 0003:05AC:029C.0005: input,hiddev99,hidraw4: USB HID v1.10 Keyboard [Apple Inc. Magic Keyboard] on usb-0000:0e:00.0-5.1.4.3/input0
+[    4.960820] input: Apple Inc. Magic Keyboard as /devices/pci0000:00/0000:00:02.1/0000:03:00.0/0000:04:0c.0/0000:0e:00.0/usb3/3-5/3-5.1/3-5.1.4/3-5.1.4.3/3-5.1.4.3:1.1/0003:05AC:029C.0006/input/input5
+[    5.027835] apple 0003:05AC:029C.0006: input,hiddev100,hidraw5: USB HID v1.10 Keyboard [Apple Inc. Magic Keyboard] on usb-0000:0e:00.0-5.1.4.3/input1
+[    5.028382] usb 3-5.1.4.4: new full-speed USB device number 12 using xhci_hcd
+[    5.252479] usb 3-5.1.4.4: New USB device found, idVendor=047d, idProduct=80d7, bcdDevice= 4.49
+[    5.280830] usb 3-5.1.4.4: New USB device strings: Mfr=1, Product=2, SerialNumber=0
+[    5.280836] usb 3-5.1.4.4: Product: Kensington SlimBlade Pro Trackball(Wired)
+[    5.280838] usb 3-5.1.4.4: Manufacturer: Kensington SlimBlade Pro Trackball(Wired)
+[    5.307847] input: Kensington SlimBlade Pro Trackball(Wired) Kensington SlimBlade Pro Trackball(Wired) as /devices/pci0000:00/0000:00:02.1/0000:03:00.0/0000:04:0c.0/0000:0e:00.0/usb3/3-5/3-5.1/3-5.1.4/3-5.1.4.4/3-5.1.4.4:1.0/0003:047D:80D7.0007/input/input6
+[    5.307922] hid-generic 0003:047D:80D7.0007: input,hidraw6: USB HID v1.11 Mouse [Kensington SlimBlade Pro Trackball(Wired) Kensington SlimBlade Pro Trackball(Wired)] on usb-0000:0e:00.0-5.1.4.4/input0
+[    5.308869] input: Kensington SlimBlade Pro Trackball(Wired) Kensington SlimBlade Pro Trackball(Wired) as /devices/pci0000:00/0000:00:02.1/0000:03:00.0/0000:04:0c.0/0000:0e:00.0/usb3/3-5/3-5.1/3-5.1.4/3-5.1.4.4/3-5.1.4.4:1.1/0003:047D:80D7.0008/input/input7
+[    5.308935] input: Kensington SlimBlade Pro Trackball(Wired) Kensington SlimBlade Pro Trackball(Wired) Keyboard as /devices/pci0000:00/0000:00:02.1/0000:03:00.0/0000:04:0c.0/0000:0e:00.0/usb3/3-5/3-5.1/3-5.1.4/3-5.1.4.4/3-5.1.4.4:1.1/0003:047D:80D7.0008/input/input8
+[    5.359732] input: Kensington SlimBlade Pro Trackball(Wired) Kensington SlimBlade Pro Trackball(Wired) as /devices/pci0000:00/0000:00:02.1/0000:03:00.0/0000:04:0c.0/0000:0e:00.0/usb3/3-5/3-5.1/3-5.1.4/3-5.1.4.4/3-5.1.4.4:1.1/0003:047D:80D7.0008/input/input9
+[    5.359852] hid-generic 0003:047D:80D7.0008: input,hiddev101,hidraw7: USB HID v1.11 Keyboard [Kensington SlimBlade Pro Trackball(Wired) Kensington SlimBlade Pro Trackball(Wired)] on usb-0000:0e:00.0-5.1.4.4/input1
+[   14.549049] usbcore: registered new device driver apple-mfi-fastcharge
+[   14.671951] snd_hda_intel 0000:01:00.1: enabling device (0000 -> 0002)
+[   14.672084] snd_hda_intel 0000:01:00.1: Disabling MSI
+[   14.672091] snd_hda_intel 0000:01:00.1: Handle vga_switcheroo audio client
+[   14.672221] snd_hda_intel 0000:11:00.1: enabling device (0000 -> 0002)
+[   14.672270] snd_hda_intel 0000:11:00.1: Handle vga_switcheroo audio client
+[   14.679631] usbcore: registered new interface driver btusb
+[   14.917975] usb 1-5: 3:1: cannot get freq at ep 0x84
+[   15.065109] usb 3-5.1.2: Quirk or no altset; falling back to MIDI 1.0
+[   15.065276] usb 3-5.1.2: unit 2 not found!
+[   15.065992] usb 3-5.1.3: Quirk or no altset; falling back to MIDI 1.0
+[   15.066140] usbcore: registered new interface driver snd-usb-audio
+[   15.135828] usbcore: registered new interface driver uvcvideo
+[   16.338676] snd_hda_intel 0000:11:00.1: bound 0000:11:00.0 (ops amdgpu_dm_audio_component_bind_ops [amdgpu])
+[   31.167464] xhci_hcd 0000:0c:00.0: xHC error in resume, USBSTS 0x411, Reinit
+[   31.167468] usb usb1: root hub lost power or was reset
+[   31.167469] usb usb2: root hub lost power or was reset
+[   31.536360] usb 1-5: reset high-speed USB device number 2 using xhci_hcd
+[   32.347370] usb 1-5: 3:1: cannot get freq at ep 0x84
+[   32.585358] usb 1-5: 3:1: cannot get freq at ep 0x84
+
+=== done -> ./probe-cc.txt ===

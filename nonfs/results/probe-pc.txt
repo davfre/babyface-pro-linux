@@ -1,0 +1,555 @@
+=== date / kernel ===
+2026-09-13T07:41:01+01:00
+Linux cachyos-x8664 7.2.4-1-cachyos #1 SMP PREEMPT_DYNAMIC Thu, 10 Sep 2026 17:19:37 +0000 x86_64 GNU/Linux
+
+=== distro ===
+NAME="CachyOS Linux"
+PRETTY_NAME="CachyOS"
+ID=cachyos
+ID_LIKE=arch
+
+=== kernel build tree present? (needed to build the module) ===
+/lib/modules/7.2.4-1-cachyos/build
+
+=== RME devices (2a39) ===
+Bus 003 Device 013: ID 2a39:3fc0 RME Babyface Pro
+
+=== full descriptors ===
+
+Bus 003 Device 013: ID 2a39:3fc0 RME Babyface Pro
+Negotiated speed: High Speed (480Mbps)
+Device Descriptor:
+  bLength                18
+  bDescriptorType         1
+  bcdUSB               2.00
+  bDeviceClass          255 Vendor Specific Class
+  bDeviceSubClass         0 [unknown]
+  bDeviceProtocol         0 
+  bMaxPacketSize0        64
+  idVendor           0x2a39 RME
+  idProduct          0x3fc0 Babyface Pro
+  bcdDevice            0.01
+  iManufacturer           1 RME
+  iProduct                2 Babyface Pro (70784522)
+  iSerial                 3 BCB2604A1527EC8
+  bNumConfigurations      1
+  Configuration Descriptor:
+    bLength                 9
+    bDescriptorType         2
+    wTotalLength       0x014b
+    bNumInterfaces          6
+    bConfigurationValue     1
+    iConfiguration          0 
+    bmAttributes         0xc0
+      Self Powered
+    MaxPower              100mA
+    Interface Descriptor:
+      bLength                 9
+      bDescriptorType         4
+      bInterfaceNumber        0
+      bAlternateSetting       0
+      bNumEndpoints           2
+      bInterfaceClass       255 Vendor Specific Class
+      bInterfaceSubClass      0 [unknown]
+      bInterfaceProtocol      0 
+      iInterface              0 
+      Endpoint Descriptor:
+        bLength                 7
+        bDescriptorType         5
+        bEndpointAddress     0x03  EP 3 OUT
+        bmAttributes            1
+          Transfer Type            Isochronous
+          Synch Type               None
+          Usage Type               Data
+        wMaxPacketSize     0x0000  1x 0 bytes
+        bInterval               1
+      Endpoint Descriptor:
+        bLength                 7
+        bDescriptorType         5
+        bEndpointAddress     0x84  EP 4 IN
+        bmAttributes            1
+          Transfer Type            Isochronous
+          Synch Type               None
+          Usage Type               Data
+        wMaxPacketSize     0x0000  1x 0 bytes
+        bInterval               1
+    Interface Descriptor:
+      bLength                 9
+      bDescriptorType         4
+      bInterfaceNumber        0
+      bAlternateSetting       1
+      bNumEndpoints           2
+      bInterfaceClass       255 Vendor Specific Class
+      bInterfaceSubClass      0 [unknown]
+      bInterfaceProtocol      0 
+      iInterface              0 
+      Endpoint Descriptor:
+        bLength                 7
+        bDescriptorType         5
+        bEndpointAddress     0x03  EP 3 OUT
+        bmAttributes            1
+          Transfer Type            Isochronous
+          Synch Type               None
+          Usage Type               Data
+        wMaxPacketSize     0x01a4  1x 420 bytes
+        bInterval               1
+      Endpoint Descriptor:
+        bLength                 7
+        bDescriptorType         5
+        bEndpointAddress     0x84  EP 4 IN
+        bmAttributes            1
+          Transfer Type            Isochronous
+          Synch Type               None
+          Usage Type               Data
+        wMaxPacketSize     0x018c  1x 396 bytes
+        bInterval               1
+    Interface Descriptor:
+      bLength                 9
+      bDescriptorType         4
+      bInterfaceNumber        0
+      bAlternateSetting       2
+      bNumEndpoints           2
+      bInterfaceClass       255 Vendor Specific Class
+      bInterfaceSubClass      0 [unknown]
+      bInterfaceProtocol      0 
+      iInterface              0 
+      Endpoint Descriptor:
+        bLength                 7
+        bDescriptorType         5
+        bEndpointAddress     0x03  EP 3 OUT
+        bmAttributes            1
+          Transfer Type            Isochronous
+          Synch Type               None
+          Usage Type               Data
+        wMaxPacketSize     0x023c  1x 572 bytes
+        bInterval               1
+      Endpoint Descriptor:
+        bLength                 7
+        bDescriptorType         5
+        bEndpointAddress     0x84  EP 4 IN
+        bmAttributes            1
+          Transfer Type            Isochronous
+          Synch Type               None
+          Usage Type               Data
+        wMaxPacketSize     0x020c  1x 524 bytes
+        bInterval               1
+    Interface Descriptor:
+      bLength                 9
+      bDescriptorType         4
+      bInterfaceNumber        0
+      bAlternateSetting       3
+      bNumEndpoints           2
+      bInterfaceClass       255 Vendor Specific Class
+      bInterfaceSubClass      0 [unknown]
+      bInterfaceProtocol      0 
+      iInterface              0 
+      Endpoint Descriptor:
+        bLength                 7
+        bDescriptorType         5
+        bEndpointAddress     0x03  EP 3 OUT
+        bmAttributes            1
+          Transfer Type            Isochronous
+          Synch Type               None
+          Usage Type               Data
+        wMaxPacketSize     0x0384  1x 900 bytes
+        bInterval               1
+      Endpoint Descriptor:
+        bLength                 7
+        bDescriptorType         5
+        bEndpointAddress     0x84  EP 4 IN
+        bmAttributes            1
+          Transfer Type            Isochronous
+          Synch Type               None
+          Usage Type               Data
+        wMaxPacketSize     0x0324  1x 804 bytes
+        bInterval               1
+    Interface Descriptor:
+      bLength                 9
+      bDescriptorType         4
+      bInterfaceNumber        1
+      bAlternateSetting       0
+      bNumEndpoints           2
+      bInterfaceClass       255 Vendor Specific Class
+      bInterfaceSubClass      0 [unknown]
+      bInterfaceProtocol      0 
+      iInterface              0 
+      Endpoint Descriptor:
+        bLength                 7
+        bDescriptorType         5
+        bEndpointAddress     0x85  EP 5 IN
+        bmAttributes            2
+          Transfer Type            Bulk
+          Synch Type               None
+          Usage Type               Data
+        wMaxPacketSize     0x0200  1x 512 bytes
+        bInterval               0
+      Endpoint Descriptor:
+        bLength                 7
+        bDescriptorType         5
+        bEndpointAddress     0x0a  EP 10 OUT
+        bmAttributes            2
+          Transfer Type            Bulk
+          Synch Type               None
+          Usage Type               Data
+        wMaxPacketSize     0x0200  1x 512 bytes
+        bInterval               0
+    Interface Descriptor:
+      bLength                 9
+      bDescriptorType         4
+      bInterfaceNumber        2
+      bAlternateSetting       0
+      bNumEndpoints           2
+      bInterfaceClass         1 Audio
+      bInterfaceSubClass      3 MIDI Streaming
+      bInterfaceProtocol      0 
+      iInterface              2 Babyface Pro (70784522)
+      MIDIStreaming Interface Descriptor:
+        bLength                 7
+        bDescriptorType        36
+        bDescriptorSubtype      1 (HEADER)
+        bcdADC               1.00
+        wTotalLength       0x0043
+      MIDIStreaming Interface Descriptor:
+        bLength                 9
+        bDescriptorType        36
+        bDescriptorSubtype      3 (MIDI_OUT_JACK)
+        bJackType               1 Embedded
+        bJackID                 3
+        bNrInputPins            1
+        baSourceID( 0)          2
+        BaSourcePin( 0)         1
+        iJack                   4 Port 1
+      MIDIStreaming Interface Descriptor:
+        bLength                 6
+        bDescriptorType        36
+        bDescriptorSubtype      2 (MIDI_IN_JACK)
+        bJackType               2 External
+        bJackID                 2
+        iJack                   4 Port 1
+      MIDIStreaming Interface Descriptor:
+        bLength                 6
+        bDescriptorType        36
+        bDescriptorSubtype      2 (MIDI_IN_JACK)
+        bJackType               1 Embedded
+        bJackID                 1
+        iJack                   4 Port 1
+      MIDIStreaming Interface Descriptor:
+        bLength                 9
+        bDescriptorType        36
+        bDescriptorSubtype      3 (MIDI_OUT_JACK)
+        bJackType               2 External
+        bJackID                 4
+        bNrInputPins            1
+        baSourceID( 0)          1
+        BaSourcePin( 0)         1
+        iJack                   4 Port 1
+      Endpoint Descriptor:
+        bLength                 9
+        bDescriptorType         5
+        bEndpointAddress     0x07  EP 7 OUT
+        bmAttributes            2
+          Transfer Type            Bulk
+          Synch Type               None
+          Usage Type               Data
+        wMaxPacketSize     0x0200  1x 512 bytes
+        bInterval               0
+        bRefresh                0
+        bSynchAddress           0
+        MIDIStreaming Endpoint Descriptor:
+          bLength                 6
+          bDescriptorType        37
+          bDescriptorSubtype      1 (Invalid)
+          bNumEmbMIDIJack         2
+          baAssocJackID( 0)       1
+          baAssocJackID( 1)       5
+      Endpoint Descriptor:
+        bLength                 9
+        bDescriptorType         5
+        bEndpointAddress     0x86  EP 6 IN
+        bmAttributes            2
+          Transfer Type            Bulk
+          Synch Type               None
+          Usage Type               Data
+        wMaxPacketSize     0x0200  1x 512 bytes
+        bInterval               0
+        bRefresh                0
+        bSynchAddress           0
+        MIDIStreaming Endpoint Descriptor:
+          bLength                 6
+          bDescriptorType        37
+          bDescriptorSubtype      1 (Invalid)
+          bNumEmbMIDIJack         2
+          baAssocJackID( 0)       3
+          baAssocJackID( 1)       7
+    Interface Descriptor:
+      bLength                 9
+      bDescriptorType         4
+      bInterfaceNumber        3
+      bAlternateSetting       0
+      bNumEndpoints           2
+      bInterfaceClass       255 Vendor Specific Class
+      bInterfaceSubClass      0 [unknown]
+      bInterfaceProtocol      0 
+      iInterface              0 
+      Endpoint Descriptor:
+        bLength                 7
+        bDescriptorType         5
+        bEndpointAddress     0x88  EP 8 IN
+        bmAttributes            2
+          Transfer Type            Bulk
+          Synch Type               None
+          Usage Type               Data
+        wMaxPacketSize     0x0200  1x 512 bytes
+        bInterval               0
+      Endpoint Descriptor:
+        bLength                 7
+        bDescriptorType         5
+        bEndpointAddress     0x09  EP 9 OUT
+        bmAttributes            2
+          Transfer Type            Bulk
+          Synch Type               None
+          Usage Type               Data
+        wMaxPacketSize     0x0200  1x 512 bytes
+        bInterval               0
+    Interface Descriptor:
+      bLength                 9
+      bDescriptorType         4
+      bInterfaceNumber        4
+      bAlternateSetting       0
+      bNumEndpoints           1
+      bInterfaceClass       255 Vendor Specific Class
+      bInterfaceSubClass      0 [unknown]
+      bInterfaceProtocol      0 
+      iInterface              0 
+      Endpoint Descriptor:
+        bLength                 7
+        bDescriptorType         5
+        bEndpointAddress     0x8b  EP 11 IN
+        bmAttributes            2
+          Transfer Type            Bulk
+          Synch Type               None
+          Usage Type               Data
+        wMaxPacketSize     0x0200  1x 512 bytes
+        bInterval               0
+    Interface Descriptor:
+      bLength                 9
+      bDescriptorType         4
+      bInterfaceNumber        5
+      bAlternateSetting       0
+      bNumEndpoints           2
+      bInterfaceClass       255 Vendor Specific Class
+      bInterfaceSubClass      0 [unknown]
+      bInterfaceProtocol      0 
+      iInterface              0 
+      Endpoint Descriptor:
+        bLength                 7
+        bDescriptorType         5
+        bEndpointAddress     0x01  EP 1 OUT
+        bmAttributes            3
+          Transfer Type            Interrupt
+          Synch Type               None
+          Usage Type               Data
+        wMaxPacketSize     0x0040  1x 64 bytes
+        bInterval               1
+      Endpoint Descriptor:
+        bLength                 7
+        bDescriptorType         5
+        bEndpointAddress     0x82  EP 2 IN
+        bmAttributes            3
+          Transfer Type            Interrupt
+          Synch Type               None
+          Usage Type               Data
+        wMaxPacketSize     0x0040  1x 64 bytes
+        bInterval               1
+    Interface Descriptor:
+      bLength                 9
+      bDescriptorType         4
+      bInterfaceNumber        5
+      bAlternateSetting       1
+      bNumEndpoints           2
+      bInterfaceClass       255 Vendor Specific Class
+      bInterfaceSubClass      0 [unknown]
+      bInterfaceProtocol      0 
+      iInterface              0 
+      Endpoint Descriptor:
+        bLength                 7
+        bDescriptorType         5
+        bEndpointAddress     0x01  EP 1 OUT
+        bmAttributes            3
+          Transfer Type            Interrupt
+          Synch Type               None
+          Usage Type               Data
+        wMaxPacketSize     0x01c0  1x 448 bytes
+        bInterval               1
+      Endpoint Descriptor:
+        bLength                 7
+        bDescriptorType         5
+        bEndpointAddress     0x82  EP 2 IN
+        bmAttributes            3
+          Transfer Type            Interrupt
+          Synch Type               None
+          Usage Type               Data
+        wMaxPacketSize     0x01c0  1x 448 bytes
+        bInterval               1
+    Interface Descriptor:
+      bLength                 9
+      bDescriptorType         4
+      bInterfaceNumber        5
+      bAlternateSetting       2
+      bNumEndpoints           2
+      bInterfaceClass       255 Vendor Specific Class
+      bInterfaceSubClass      0 [unknown]
+      bInterfaceProtocol      0 
+      iInterface              0 
+      Endpoint Descriptor:
+        bLength                 7
+        bDescriptorType         5
+        bEndpointAddress     0x01  EP 1 OUT
+        bmAttributes            3
+          Transfer Type            Interrupt
+          Synch Type               None
+          Usage Type               Data
+        wMaxPacketSize     0x0280  1x 640 bytes
+        bInterval               1
+      Endpoint Descriptor:
+        bLength                 7
+        bDescriptorType         5
+        bEndpointAddress     0x82  EP 2 IN
+        bmAttributes            3
+          Transfer Type            Interrupt
+          Synch Type               None
+          Usage Type               Data
+        wMaxPacketSize     0x0280  1x 640 bytes
+        bInterval               1
+    Interface Descriptor:
+      bLength                 9
+      bDescriptorType         4
+      bInterfaceNumber        5
+      bAlternateSetting       3
+      bNumEndpoints           2
+      bInterfaceClass       255 Vendor Specific Class
+      bInterfaceSubClass      0 [unknown]
+      bInterfaceProtocol      0 
+      iInterface              0 
+      Endpoint Descriptor:
+        bLength                 7
+        bDescriptorType         5
+        bEndpointAddress     0x01  EP 1 OUT
+        bmAttributes            3
+          Transfer Type            Interrupt
+          Synch Type               None
+          Usage Type               Data
+        wMaxPacketSize     0x0400  1x 1024 bytes
+        bInterval               1
+      Endpoint Descriptor:
+        bLength                 7
+        bDescriptorType         5
+        bEndpointAddress     0x82  EP 2 IN
+        bmAttributes            3
+          Transfer Type            Interrupt
+          Synch Type               None
+          Usage Type               Data
+        wMaxPacketSize     0x0400  1x 1024 bytes
+        bInterval               1
+Device Qualifier (for other device speed):
+  bLength                10
+  bDescriptorType         6
+  bcdUSB               2.00
+  bDeviceClass          255 Vendor Specific Class
+  bDeviceSubClass         0 [unknown]
+  bDeviceProtocol         0 
+  bMaxPacketSize0        64
+  bNumConfigurations      0
+Device Status:     0x0e00
+  (Bus Powered)
+
+=== sysfs summary ===
+--- /sys/bus/usb/devices/3-5.1.2/
+idVendor         2a39
+idProduct        3fc0
+bcdDevice        0001
+manufacturer     RME
+product          Babyface Pro (70784522)
+serial           BCB2604A1527EC8
+version           2.00
+speed            480
+bNumInterfaces    6
+drivers bound:
+
+=== ALSA cards ===
+ 0 [NVidia         ]: HDA-Intel - HDA NVidia
+                      HDA NVidia at 0xdf080000 irq 140
+ 1 [Generic        ]: HDA-Intel - HD-Audio Generic
+                      HD-Audio Generic at 0xdf580000 irq 142
+ 2 [Camera         ]: USB-Audio - UGREEN Camera
+                      UGREEN Camera UGREEN Camera at usb-0000:0c:00.0-5, high speed
+ 4 [USBMIDI        ]: USB-Audio - USB-MIDI
+                      USB-MIDI at usb-0000:0e:00.0-5.1.3, full speed
+--- /proc/asound/card2/stream0
+UGREEN Camera UGREEN Camera at usb-0000:0c:00.0-5, high speed : USB Audio
+
+Capture:
+  Status: Stop
+  Interface 3
+    Altset 1
+    Format: S16_LE
+    Channels: 2
+    Endpoint: 0x84 (4 IN) (ASYNC)
+    Rates: 8000, 11025, 16000, 22050, 24000, 44100, 48000
+    Data packet interval: 1000 us
+    Bits: 16
+    Channel map: FL FR
+
+=== modules loaded ===
+snd_usb_audio         659456  1
+snd_usbmidi_lib        57344  1 snd_usb_audio
+snd_ump                40960  1 snd_usb_audio
+snd_rawmidi            53248  3 snd_seq_midi,snd_usbmidi_lib,snd_ump
+snd_hwdep              24576  2 snd_usb_audio,snd_hda_codec
+mc                     94208  5 videodev,snd_usb_audio,videobuf2_v4l2,uvcvideo,videobuf2_common
+snd_pcm               237568  5 snd_hda_codec_hdmi,snd_hda_intel,snd_usb_audio,snd_hda_codec,snd_hda_core
+snd                   163840  21 snd_seq,snd_seq_device,snd_hda_codec_hdmi,snd_hwdep,snd_hda_intel,snd_usb_audio,snd_usbmidi_lib,snd_hda_codec,snd_timer,snd_ump,snd_pcm,snd_rawmidi
+
+=== recent kernel messages ===
+[    4.960820] input: Apple Inc. Magic Keyboard as /devices/pci0000:00/0000:00:02.1/0000:03:00.0/0000:04:0c.0/0000:0e:00.0/usb3/3-5/3-5.1/3-5.1.4/3-5.1.4.3/3-5.1.4.3:1.1/0003:05AC:029C.0006/input/input5
+[    5.027835] apple 0003:05AC:029C.0006: input,hiddev100,hidraw5: USB HID v1.10 Keyboard [Apple Inc. Magic Keyboard] on usb-0000:0e:00.0-5.1.4.3/input1
+[    5.028382] usb 3-5.1.4.4: new full-speed USB device number 12 using xhci_hcd
+[    5.252479] usb 3-5.1.4.4: New USB device found, idVendor=047d, idProduct=80d7, bcdDevice= 4.49
+[    5.280830] usb 3-5.1.4.4: New USB device strings: Mfr=1, Product=2, SerialNumber=0
+[    5.280836] usb 3-5.1.4.4: Product: Kensington SlimBlade Pro Trackball(Wired)
+[    5.280838] usb 3-5.1.4.4: Manufacturer: Kensington SlimBlade Pro Trackball(Wired)
+[    5.307847] input: Kensington SlimBlade Pro Trackball(Wired) Kensington SlimBlade Pro Trackball(Wired) as /devices/pci0000:00/0000:00:02.1/0000:03:00.0/0000:04:0c.0/0000:0e:00.0/usb3/3-5/3-5.1/3-5.1.4/3-5.1.4.4/3-5.1.4.4:1.0/0003:047D:80D7.0007/input/input6
+[    5.307922] hid-generic 0003:047D:80D7.0007: input,hidraw6: USB HID v1.11 Mouse [Kensington SlimBlade Pro Trackball(Wired) Kensington SlimBlade Pro Trackball(Wired)] on usb-0000:0e:00.0-5.1.4.4/input0
+[    5.308869] input: Kensington SlimBlade Pro Trackball(Wired) Kensington SlimBlade Pro Trackball(Wired) as /devices/pci0000:00/0000:00:02.1/0000:03:00.0/0000:04:0c.0/0000:0e:00.0/usb3/3-5/3-5.1/3-5.1.4/3-5.1.4.4/3-5.1.4.4:1.1/0003:047D:80D7.0008/input/input7
+[    5.308935] input: Kensington SlimBlade Pro Trackball(Wired) Kensington SlimBlade Pro Trackball(Wired) Keyboard as /devices/pci0000:00/0000:00:02.1/0000:03:00.0/0000:04:0c.0/0000:0e:00.0/usb3/3-5/3-5.1/3-5.1.4/3-5.1.4.4/3-5.1.4.4:1.1/0003:047D:80D7.0008/input/input8
+[    5.359732] input: Kensington SlimBlade Pro Trackball(Wired) Kensington SlimBlade Pro Trackball(Wired) as /devices/pci0000:00/0000:00:02.1/0000:03:00.0/0000:04:0c.0/0000:0e:00.0/usb3/3-5/3-5.1/3-5.1.4/3-5.1.4.4/3-5.1.4.4:1.1/0003:047D:80D7.0008/input/input9
+[    5.359852] hid-generic 0003:047D:80D7.0008: input,hiddev101,hidraw7: USB HID v1.11 Keyboard [Kensington SlimBlade Pro Trackball(Wired) Kensington SlimBlade Pro Trackball(Wired)] on usb-0000:0e:00.0-5.1.4.4/input1
+[   14.549049] usbcore: registered new device driver apple-mfi-fastcharge
+[   14.671951] snd_hda_intel 0000:01:00.1: enabling device (0000 -> 0002)
+[   14.672084] snd_hda_intel 0000:01:00.1: Disabling MSI
+[   14.672091] snd_hda_intel 0000:01:00.1: Handle vga_switcheroo audio client
+[   14.672221] snd_hda_intel 0000:11:00.1: enabling device (0000 -> 0002)
+[   14.672270] snd_hda_intel 0000:11:00.1: Handle vga_switcheroo audio client
+[   14.679631] usbcore: registered new interface driver btusb
+[   14.917975] usb 1-5: 3:1: cannot get freq at ep 0x84
+[   15.065109] usb 3-5.1.2: Quirk or no altset; falling back to MIDI 1.0
+[   15.065276] usb 3-5.1.2: unit 2 not found!
+[   15.065992] usb 3-5.1.3: Quirk or no altset; falling back to MIDI 1.0
+[   15.066140] usbcore: registered new interface driver snd-usb-audio
+[   15.135828] usbcore: registered new interface driver uvcvideo
+[   16.338676] snd_hda_intel 0000:11:00.1: bound 0000:11:00.0 (ops amdgpu_dm_audio_component_bind_ops [amdgpu])
+[   31.167464] xhci_hcd 0000:0c:00.0: xHC error in resume, USBSTS 0x411, Reinit
+[   31.167468] usb usb1: root hub lost power or was reset
+[   31.167469] usb usb2: root hub lost power or was reset
+[   31.536360] usb 1-5: reset high-speed USB device number 2 using xhci_hcd
+[   32.347370] usb 1-5: 3:1: cannot get freq at ep 0x84
+[   32.585358] usb 1-5: 3:1: cannot get freq at ep 0x84
+[ 1996.863602] usb 3-5.1.2: USB disconnect, device number 8
+[ 2003.441769] usb 3-5.1.2: new high-speed USB device number 13 using xhci_hcd
+[ 2003.527806] usb 3-5.1.2: New USB device found, idVendor=2a39, idProduct=3fc0, bcdDevice= 0.01
+[ 2003.528066] usb 3-5.1.2: New USB device strings: Mfr=1, Product=2, SerialNumber=3
+[ 2003.528068] usb 3-5.1.2: Product: Babyface Pro (70784522)
+[ 2003.528069] usb 3-5.1.2: Manufacturer: RME
+[ 2003.528071] usb 3-5.1.2: SerialNumber: BCB2604A1527EC8
+
+=== done -> ./probe-pc.txt ===

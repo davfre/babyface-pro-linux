@@ -1,0 +1,19 @@
+diff --git a/tools/kernel/babyfacepro-ctl.c b/tools/kernel/babyfacepro-ctl.c
+index 9e017c0..df51a11 100644
+--- a/tools/kernel/babyfacepro-ctl.c
++++ b/tools/kernel/babyfacepro-ctl.c
+@@ -1662,7 +1662,13 @@ out:
+  */
+ int bf_gain_max_db(int mic)
+ {
+-	return mic < 2 ? BF_GAIN_MAX_DB : 9;
++	/* TEST HACK, NOT FOR UPSTREAM: raise the mic ceiling so the
++	 * control can reach register values above raw 20.  bf_gain_raw()
++	 * is (db * 8 + 13) / 26, so db 0..100 spans raw 0..31 -- the full
++	 * 5-bit register.  Used to find out whether raw 20 is really the
++	 * hardware maximum.  Revert before doing anything else.
++	 */
++	return mic < 2 ? 100 : 9;
+ }
+ 
+ int bf_gain_db(int mic, u8 raw)

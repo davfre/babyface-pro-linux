@@ -1,0 +1,29 @@
+bbf-measure v2.3  --cable --tests pad
+card FS, CABLE patched, phantom confirmed off, gain 30 dB
+fixed master 64 (-42 dB), no autolevel
+
+   PAD on   measured   -38.54 dBFS  peak 0.017
+   PAD off  measured   -29.73 dBFS  peak 0.046
+   PAD on   measured   -38.54 dBFS  peak 0.017
+
+   PAD depth 8.81 dB; the two PAD-on readings agree to 0.00 dB
+
+Notes:
+  - PAD works and the relay settles repeatably.
+  - Earlier v2.1/v2.2 runs reported "+28.11 dB" -- invalid: the PAD-off
+    point clipped (peak 1.000, RMS -0.40 dBFS = a full-scale square
+    wave), so the A/B compared against clipping, not signal.
+  - PAD state PERSISTS across module reloads.  Pre-reload and
+    post-reload runs were identical to 0.01 dB, which could not happen
+    if cold-init reset it.
+  - RME publish "-11 dB up to +65 dB" as the gain range; 8.8 dB is
+    close to but not equal to that implied 11 dB.  The driver does not
+    model PAD depth (it is just a switch), so this is a hardware-vs-
+    spec-sheet observation, not a driver issue.
+
+UNEXPLAINED, reproduced twice: with PAD off, master 128 -> 256 (a 6 dB
+step) produced a ~22 dB jump into full-scale clipping:
+      master  64  peak 0.046
+      master 128  peak 0.075
+      master 256  peak 1.000  (RMS -0.40 dBFS, i.e. a square wave)
+No explanation offered.  Worth a look if anyone cares to.

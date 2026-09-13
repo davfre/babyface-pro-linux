@@ -1,0 +1,74 @@
+Subject: Re: [RFC PATCH v3 1/4] ALSA: usb: add RME Babyface Pro FS driver (proprietary mode) - core + PCM
+
+Hi,
+
+I tried this series on an RME Babyface Pro -- the original 2015 model,
+not the FS -- on 6.17-rc / 7.2.4 (x86_64, AMD).  The card probes and
+registers fine, but streaming never starts: every attempt fails in
+babyface_stream_work() with -EAGAIN, and any client that retries (here
+PipeWire) floods the log with
+
+  usb 3-5.1.2: failed to start stream: -11
+
+The URB transfer buffers are allocated with usb_alloc_coherent() and
+their DMA addresses are kept in chip->dma_in[] / chip->dma_out[], but
+the URBs are submitted without transfer_dma and without
+URB_NO_TRANSFER_DMA_MAP.  usb_hcd_map_urb_for_dma() therefore calls
+dma_map_single() on a coherent allocation.  Where the IOMMU is in
+translated mode that allocation can be a vmap rather than lowmem, and
+the mapping fails with -EAGAIN:
+
+  iommu: Default domain type: Translated
+  AMD-Vi: ... (28 iommu groups)
+
+On a host where dma_alloc_coherent() happens to return physically
+contiguous lowmem the same code works by accident, which is presumably
+why it passes on your machine.  It will bite anyone running with the
+IOMMU enabled, which is the default on current AMD and Intel desktops.
+
+With the patch below the stream starts on the first attempt, and a
+full-duplex arecord + aplay pair at 48 kHz S32_LE runs clean with no
+errors in the log.
+
+--- a/sound/usb/babyfacepro/babyfacepro.c
++++ b/sound/usb/babyfacepro/babyfacepro.c
+@@ -838,6 +838,20 @@ void babyface_stream_work(struct work_struct *work)
+ 					 usb_sndintpipe(chip->dev, BF_EP_OUT),
+ 					 chip->buf_out[i], urbsize,
+ 					 babyface_complete_out, chip, 1);
++			/* The buffers come from usb_alloc_coherent(), so
++			 * they are already mapped: hand the HCD the
++			 * mapping instead of letting it map them again.
++			 * Without this usb_hcd_map_urb_for_dma() calls
++			 * dma_map_single() on a coherent allocation, which
++			 * fails with -EAGAIN wherever that allocation is a
++			 * vmap (any IOMMU-translated host).
++			 */
++			chip->urbs_in[i]->transfer_dma = chip->dma_in[i];
++			chip->urbs_in[i]->transfer_flags |=
++				URB_NO_TRANSFER_DMA_MAP;
++			chip->urbs_out[i]->transfer_dma = chip->dma_out[i];
++			chip->urbs_out[i]->transfer_flags |=
++				URB_NO_TRANSFER_DMA_MAP;
+ 		}
+ 		for (i = 0; i < chip->nurbs; i++) {
+ 			ret = usb_submit_urb(chip->urbs_in[i], GFP_KERNEL);
+
+Two observations that may be useful beyond the bug:
+
+- The original Babyface Pro enumerates identically to the FS: 2a39:3fb0
+  in class-compliant mode, 2a39:3fc0 in proprietary mode, interface 5,
+  ep 0x01 OUT / 0x82 IN, altsettings 1/2/3 with 448/640/1024-byte
+  packets.  With the fix above the driver binds and streams on it
+  unmodified, so the driver (and its name) may want to cover both
+  models rather than the FS alone.
+
+- The AN1/2 output master law is exact on that hardware.  Measured
+  through the device's own loopback with a 440 Hz tone at a known
+  level, raw 16384 down to 256 tracked the expected 6 dB per halving
+  with 0.00 dB spread across a 36 dB span.  That is only the digital
+  path; the analog stages (preamp gain law, reference levels, PAD)
+  are untested on the non-FS unit and are where the two models are
+  most likely to diverge.
+
+Signed-off-by: YOUR NAME <david@octofox.ai>

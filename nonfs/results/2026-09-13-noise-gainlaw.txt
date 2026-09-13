@@ -1,0 +1,40 @@
+bbf-measure v2.0  --tests noise
+card FS (RME Babyface Pro, 2015 non-FS, proprietary mode 2a39:3fc0)
+NO CABLE.  Nothing patched; the preamp amplifies its own input noise,
+so the measured floor tracks real gain wherever preamp noise dominates
+over the ADC floor (roughly raw >= 10 here).
+master 256 (-30 dB), no tone played.
+
+   raw   db set    claim dB   measured      step
+     0        0        0.00    -113.80
+     1        2        3.25    -113.52     +0.28
+     2        5        6.50    -111.76     +1.76
+     3        9        9.75    -111.71     +0.05
+     4       12       13.00    -109.40     +2.32
+     5       15       16.25    -106.35     +3.05
+     6       18       19.50    -103.57     +2.78
+     7       22       22.75    -100.33     +3.24
+     8       25       26.00     -97.61     +2.72
+     9       28       29.25     -94.81     +2.80
+    10       31       32.50     -93.70     +1.11
+    11       35       35.75     -92.15     +1.55
+    12       38       39.00     -89.34     +2.81
+    13       41       42.25     -86.64     +2.71
+    14       44       45.50     -83.73     +2.90
+    15       48       48.75     -80.60     +3.13
+    16       51       52.00     -77.65     +2.95
+    17       54       55.25     -74.76     +2.89
+    18       57       58.50     -71.59     +3.18
+    19       61       61.75     -68.68     +2.91
+    20       64       65.00     -65.82     +2.86
+
+least-squares fits over this data:
+   raw  0..20   2.496   (dragged down by the ADC-floor region)
+   raw 10..20   2.876
+   raw 12..20   2.968   <- valid region
+   raw 14..20   2.987   <- valid region
+
+Driver claims 3.250 dB per register step.
+
+This is the reproduction to hand anyone else: no cable, no output
+stage, no loop-linearity assumption, two minutes to run.

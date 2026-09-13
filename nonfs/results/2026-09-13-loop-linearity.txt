@@ -1,0 +1,30 @@
+bbf-looplin.py (superseded; bbf-measure-v2.3.py --cable --tests
+linearity is the maintained equivalent, with a corrected fit)
+
+card FS, CABLE patched, master raw 4, gain 64 dB -- both frozen.
+Only the DIGITAL amplitude of the tone changes, so the measured slope
+is a property of the loop alone.
+
+ tone dBFS     measured      step     peak
+     -14.0       -23.42              0.101
+     -20.0       -29.41     -5.99    0.053
+     -26.0       -35.40     -5.98    0.029
+     -32.0       -41.32     -5.93    0.017
+     -38.0       -47.01     -5.69    0.010
+     -44.0       -52.02     -5.02    0.009
+     -50.0       -55.42     -3.40    0.007
+
+The script's own fit (0.910) was WRONG: it fitted through
+noise-dominated points.  The correct reading:
+
+  - top three steps are -5.99, -5.98, -5.93 against a nominal 6.00
+  - slope over the four points above the noise floor: 0.994 dB/dB
+  - the low-end compression fits measured = 10*log10(S^2 + N^2) with a
+    single N = -57.6 dBFS (preamp noise at 64 dB of gain), predicting
+    every point to 0.01 dB:
+        tone -32  predicted -41.32   measured -41.32
+        tone -38  predicted -47.02   measured -47.01
+        tone -44  predicted -52.02   measured -52.02
+        tone -50  predicted -55.42   measured -55.42
+
+So the loop is linear and laws measured through it stand as measured.

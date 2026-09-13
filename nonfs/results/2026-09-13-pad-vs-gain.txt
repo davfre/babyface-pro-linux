@@ -1,0 +1,65 @@
+bbf-measure v2.4  --cable --tests padsweep, two runs
+card FS (RME Babyface Pro, 2015 non-FS), CABLE patched, phantom off
+PAD A/B repeated across the gain range at a fixed master.
+
+RUN 1: --pad-master 64 (-42 dB)
+
+ gain dB       PAD on      PAD off      depth peak off
+       0       -64.85       -54.63      10.22    0.003
+      10       -55.80       -45.72      10.08    0.007
+      20       -47.00       -37.29       9.71    0.019
+      30       -38.54       -29.73       8.81    0.046
+      40       -30.74       -23.74       6.99    0.093
+      50       -24.48        -0.20      24.27    1.000  CLIP - skipped
+      60        -0.31        -0.26       0.05    1.000  CLIP - skipped
+      65        -0.34        -0.28       0.06    1.000  CLIP - skipped
+
+RUN 2: --pad-master 8 (-60 dB), i.e. 18 dB quieter
+
+ gain dB       PAD on      PAD off      depth peak off
+       0       -82.99       -72.70      10.29    0.000
+      10       -73.88       -63.61      10.27    0.001
+      20       -64.93       -54.71      10.22    0.003
+      30       -56.05       -45.96      10.09    0.007
+      40       -47.20       -37.48       9.72    0.020
+      50       -38.68       -29.85       8.83    0.048
+      60       -30.82       -23.78       7.03    0.105
+      65       -26.49        -0.25      26.24    1.000  CLIP - skipped
+
+CONCLUSION: PAD depth is ~10.3 dB and CONSTANT.  The apparent decline is
+not a function of gain -- it is a function of the level reaching the
+preamp input.  Aligning the two runs by PAD-off level rather than by
+gain shows the correspondence exactly:
+
+   master 64, gain 20  ->  off -37.29  depth 9.71
+   master  8, gain 40  ->  off -37.48  depth 9.72
+   master 64, gain 30  ->  off -29.73  depth 8.81
+   master  8, gain 50  ->  off -29.85  depth 8.83
+   master 64, gain 40  ->  off -23.74  depth 6.99
+   master  8, gain 60  ->  off -23.78  depth 7.03
+
+Three pairs at different gain settings, matching to 0.04 dB.  Dropping
+the master by 18 dB slid the whole curve two gain steps along.
+
+The quietest points converge on 10.29 / 10.27 / 10.22 dB.  RME publish
+"-11 dB up to +65 dB" as the gain range, so ~10.3 dB measured is
+consistent with the PAD being the -11 dB bottom of that range.
+
+WHAT THIS IMPLIES ABOUT THE MEASUREMENT RIG
+
+The compression tracks the level at the PREAMP INPUT, not the preamp
+output.  That reconciles three things that looked contradictory:
+
+  1. The loop-linearity test (0.994 dB/dB) ran at master 4 with 64 dB of
+     gain: high OUTPUT level but a tiny input, so no compression.
+  2. The cable gain sweep's taper over its top five register steps
+     appeared only in the cable rig, and the no-cable noise measurement
+     -- which has no input signal at all -- shows no taper there.
+  3. The unexplained master 128 -> 256 jump into a full-scale square
+     wave happened with PAD OFF: the input stage running out of
+     headroom and hard-clipping.  Exactly the overload the PAD exists
+     to prevent.
+
+So: the cable rig is only trustworthy while the preamp input is low.
+The no-cable noise method has no input signal and is not subject to
+this at all, which is why it is the one to publish.
