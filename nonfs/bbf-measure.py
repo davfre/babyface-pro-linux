@@ -40,7 +40,7 @@ import sys
 import time
 import wave
 
-VERSION = "2.4"
+VERSION = "3.2"
 RATE = 48000
 FS = 2.0 ** 31
 TONE = "/tmp/bbf-v2-tone.wav"
@@ -61,6 +61,10 @@ PEAK_LO, PEAK_HI = 0.15, 0.60
 
 GAIN_MAX_DB = 65             # the driver's declared ceiling; never exceeded
 PAD_MASTER = 64              # fixed operating point for the PAD A/B
+GAIN_STEP = 5                # dB between points in the gain sweep
+GAIN_MASTER = None           # fixed master for the gain sweep, or None to autolevel
+GAIN_FROM = 0                # gain sweep range, dB
+GAIN_TO = None               # defaults to GAIN_MAX_DB
 
 
 # ---------------------------------------------------------------- helpers
@@ -69,21 +73,28 @@ def db_of_master(raw):
     return 6 * math.log2(raw / float(MASTER_UNITY))
 
 
-def raw_of_db(db):
-    """The driver's dB -> gain register mapping for mics 0/1."""
-    return (db * 8 + 13) // 26
+def gain_points(step=5):
+    """dB values to sweep.
 
+    v3.0 deliberately knows nothing about how the driver encodes gain.
+    Earlier versions sampled "one point per distinct register value" using
+    their own copy of the driver's arithmetic, so when the driver's
+    encoding was corrected the sampling silently went stale and the sweep
+    kept walking the old grid.
 
-def gain_boundaries():
-    """Lowest dB reaching each distinct register value, within the range
-    the driver declares."""
-    out, seen = [], set()
-    for db in range(0, GAIN_MAX_DB + 1):
-        r = raw_of_db(db)
-        if r not in seen:
-            seen.add(r)
-            out.append((r, db))
-    return out
+    Sweeping plain dB works against any version. If the control quantises,
+    the measurement shows it as plateaus, which is a result rather than a
+    problem. The adjacent triplet at 30/31/32 is there to make 1 dB
+    resolution visible either way: three distinct levels means it resolves,
+    one level repeated means it does not.
+    """
+    lo = GAIN_FROM
+    hi = GAIN_MAX_DB if GAIN_TO is None else GAIN_TO
+    pts = set(range(lo, hi + 1, step))
+    if step > 1:
+        pts |= {d for d in (30, 31, 32) if lo <= d <= hi}
+    pts.add(hi)
+    return sorted(pts)
 
 
 def make_tone(path, dbfs, freq=997.0, sec=5.0):
@@ -247,29 +258,26 @@ def t_noise(dev):
     print("    measured floor tracks real gain at the top of the range)")
     dev.cset(LOOPBACK, "0")
     dev.master(MASTER_SAFE)
-    print("\n%6s %8s %11s %10s %9s" % ("raw", "db set", "claim dB",
-                                       "measured", "step"))
+    print("\n%8s %12s %10s" % ("db set", "measured", "step"))
     pts, prev = [], None
-    for raw, db in gain_boundaries():
+    for db in gain_points(GAIN_STEP):
         dev.gain(db)
         rms, peak = dev.capture(play=False)
         if rms is None:
-            print("%6d %8d %11.2f %10s" % (raw, db, raw * 13 / 4.0, "silence"))
+            print("%8d %12s" % (db, "silence"))
             prev = None
             continue
         step = "" if prev is None else "%+.2f" % (rms - prev)
-        print("%6d %8d %11.2f %10.2f %9s"
-              % (raw, db, raw * 13 / 4.0, rms, step))
-        pts.append((raw, rms))
+        print("%8d %12.2f %10s" % (db, rms, step))
+        pts.append((float(db), rms))
         prev = rms
-    # only the top of the range is preamp-noise dominated; below that the
-    # ADC floor takes over and the curve flattens.
-    top = [p for p in pts if p[0] >= 10]
+    top = [p for p in pts if p[0] >= 30]
     s = fit(top)
     if s is not None:
-        print("\n   top-of-range slope %.3f dB per register step "
-              "(raw >= 10)" % s)
-        print("   driver claims 3.250")
+        print("\n   %.3f dB per dB of control over the top of the range "
+              "(30 dB and up)" % s)
+        print("   below that the converter's own noise floor dominates and "
+              "the curve flattens")
 
 
 def t_linearity(dev):
@@ -318,35 +326,72 @@ def t_linearity(dev):
 
 
 def t_gain(dev):
-    print("\n== gain: mic preamp law, one point per register step ==")
+    """Sweep gain, measuring the tone AND the noise floor at every point.
+
+    v3.2: each point is captured twice, once with the tone playing and once
+    silent. Without that you cannot tell a gain curve from the amplified
+    noise floor rising, because both track real gain. Any point whose tone
+    is not clearly above its own noise is marked and excluded.
+    """
+    print("\n== gain: mic preamp law ==")
     dev.cset(LOOPBACK, "0")
     make_tone(TONE, -20.0)
-    master = dev.autolevel(GAIN_MAX_DB)
-    print("   master %d (%+.1f dB)\n" % (master, db_of_master(master)))
+    if GAIN_MASTER is not None:
+        master = GAIN_MASTER
+        print("   master %d (%+.1f dB), fixed" % (master, db_of_master(master)))
+        dev.gain(0)
+    else:
+        master = dev.autolevel(GAIN_MAX_DB)
+        print("   master %d (%+.1f dB), autolevelled"
+              % (master, db_of_master(master)))
     dev.master(master)
-    print("%6s %8s %11s %10s %9s %8s" % ("raw", "db set", "claim dB",
-                                         "measured", "step", "peak"))
+    print("   each point measured twice, tone and silence\n")
+    print("%8s %11s %11s %8s %9s %8s"
+          % ("db set", "tone", "noise", "S/N", "step", "peak"))
     pts, prev = [], None
-    for raw, db in gain_boundaries():
+    for db in gain_points(GAIN_STEP):
         dev.gain(db)
-        rms, peak = dev.capture()
-        if rms is None:
-            print("%6d %8d %11.2f %10s" % (raw, db, raw * 13 / 4.0, "silence"))
+        tone_rms, peak = dev.capture()
+        noise_rms, _ = dev.capture(play=False)
+        if tone_rms is None:
+            print("%8d %11s" % (db, "silence"))
             prev = None
             continue
-        step = "" if prev is None else "%+.2f" % (rms - prev)
-        print("%6d %8d %11.2f %10.2f %9s %8.3f%s"
-              % (raw, db, raw * 13 / 4.0, rms, step, peak,
-                 "  CLIP" if peak > CLIP else ""))
-        if peak <= CLIP:
-            pts.append((raw, rms))
-        prev = rms
+        nf = noise_rms if noise_rms is not None else -200.0
+        snr = tone_rms - nf
+        why = ""
+        if peak > CLIP:
+            why = "  CLIP"
+        elif snr < 6.0:
+            why = "  NO SIGNAL (measuring noise)"
+        step = "" if prev is None else "%+.2f" % (tone_rms - prev)
+        print("%8d %11.2f %11.2f %8.1f %9s %8.3f%s"
+              % (db, tone_rms, nf, snr, step, peak, why))
+        if not why:
+            pts.append((float(db), tone_rms))
+            prev = tone_rms
+        else:
+            prev = None
+
+    if len(pts) < 4:
+        print("\n   too few valid points to fit.  Adjust --gain-master: the")
+        print("   tone must sit above the noise floor and below clipping at")
+        print("   every gain in the sweep, which may not be possible across")
+        print("   the whole range in one run.")
+        return
+
+    drops = [(pts[i - 1][0], pts[i][0], pts[i][1] - pts[i - 1][1])
+             for i in range(1, len(pts)) if pts[i][1] < pts[i - 1][1] - 0.3]
+    if drops:
+        print("\n   NON-MONOTONIC at %d points:" % len(drops))
+        for a, b, d in drops[:8]:
+            print("      %g -> %g dB : %+.2f dB" % (a, b, d))
+
     s = fit(pts)
-    if s is not None and pts:
-        print("\n   %.3f dB per register step over raw %d..%d"
-              % (s, pts[0][0], pts[-1][0]))
-        print("   span %.1f dB measured, %.1f dB claimed"
-              % (pts[-1][1] - pts[0][1], 65.0))
+    print("\n   %.3f dB measured per dB of control (1.000 = correct), over"
+          % s)
+    print("   %d valid points from %g to %g dB"
+          % (len(pts), pts[0][0], pts[-1][0]))
 
 
 def t_pad(dev):
@@ -451,7 +496,7 @@ TESTS = {
 
 
 def main():
-    global PAD_MASTER
+    global PAD_MASTER, GAIN_MASTER, GAIN_STEP, GAIN_FROM, GAIN_TO
     ap = argparse.ArgumentParser(
         description="Babyface Pro measurement probes (v%s)" % VERSION)
     ap.add_argument("--card", default="FS",
@@ -460,6 +505,16 @@ def main():
     ap.add_argument("--cable", action="store_true",
                     help="an analog output IS patched to input 1, PAD on, "
                          "phantom off.  Required by linearity/gain/pad.")
+    ap.add_argument("--gain-master", type=int, default=None,
+                    help="fixed master raw for the gain sweep; use the same "
+                         "value either side of a driver change so the two "
+                         "runs are comparable")
+    ap.add_argument("--gain-from", type=int, default=GAIN_FROM,
+                    help="first dB of the gain sweep (default 0)")
+    ap.add_argument("--gain-to", type=int, default=None,
+                    help="last dB of the gain sweep (default 65)")
+    ap.add_argument("--gain-step", type=int, default=GAIN_STEP,
+                    help="dB between points in the gain sweep (default 5)")
     ap.add_argument("--pad-master", type=int, default=PAD_MASTER,
                     help="fixed master raw for the pad test (default 64); "
                          "lower it if either state clips")
@@ -468,6 +523,10 @@ def main():
                     help="which tests to run (default: digital)")
     args = ap.parse_args()
     PAD_MASTER = args.pad_master
+    GAIN_MASTER = args.gain_master
+    GAIN_STEP = args.gain_step
+    GAIN_FROM = args.gain_from
+    GAIN_TO = args.gain_to
 
     names = sorted(TESTS) if "all" in args.tests else args.tests
     needs_cable = [n for n in names if TESTS[n][1]]

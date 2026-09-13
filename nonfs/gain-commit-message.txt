@@ -1,0 +1,35 @@
+kernel: fix the mic gain encoding, 1 dB steps over the full range
+
+Bits 5-7 of the gain value were read as a transaction counter and
+written with a rotating 0x20/0x00/0x40.  They are the low part of the
+gain.  TotalMix packs it as
+
+    coarse = min(dB / 3, 20)	bits 0-4, 3 dB per step
+    fine   = dB - 3 * coarse	bits 5-7, the 0-2 dB remainder
+    value  = (fine << 5) | coarse
+
+with coarse saturating at 20 above 60 dB and fine continuing 3, 4, 5,
+so 65 dB is 0xb4.  Masking the value to 5 bits therefore discarded the
+remainder of every setting, and the rotation then wrote 0-2 dB of error
+into those same bits depending on where it had got to.  The control
+reached 21 hardware states about 3 dB apart rather than 66 at 1 dB.
+
+Decoded from USBPcap captures of TotalMix on Windows: 48 gain writes
+across four captures, every value matching the formula, including a
+stray 34 dB (0x2b) set by accident.
+
+Measured on an original Babyface Pro (non-FS) by sweeping the control
+with nothing patched and measuring the preamp's own noise floor, which
+above about 33 dB tracks real gain and has no large signal in it to
+compress.  Before, 38/39/40 dB all read -89.5 dBFS and 41/42/43 all
+read -86.65, stepping about 3 dB between groups.  After, every dB moves
+the hardware: 1.001 dB per dB over 35-50 dB, mean step 1.009.  The same
+unit under RME's own driver, with gain set in TotalMix on macOS,
+measures 0.999 dB per labelled dB, so this now matches the vendor.
+
+bf_gain_db() is corrected to match: the coarse step is 3.00 dB, not
+3.25.  gain_cycle goes with the counter.
+
+The Hi-Z inputs were already correct.  Their value is gain in 0.5 dB
+units, which is what db * 2 produces; captures confirm 1 dB -> 0x02,
+9 dB -> 0x12 and 4.5 dB -> 0x09.

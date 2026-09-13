@@ -30,8 +30,8 @@ Device Descriptor:
   idProduct          0x3fc0 Babyface Pro
   bcdDevice            0.01
   iManufacturer           1 RME
-  iProduct                2 Babyface Pro (70784522)
-  iSerial                 3 BCB2604A1527EC8
+  iProduct                2 Babyface Pro (NNNNNNNN)
+  iSerial                 3 <serial redacted>
   bNumConfigurations      1
   Configuration Descriptor:
     bLength                 9
@@ -202,7 +202,7 @@ Device Descriptor:
       bInterfaceClass         1 Audio
       bInterfaceSubClass      3 MIDI Streaming
       bInterfaceProtocol      0 
-      iInterface              2 Babyface Pro (70784522)
+      iInterface              2 Babyface Pro (NNNNNNNN)
       MIDIStreaming Interface Descriptor:
         bLength                 7
         bDescriptorType        36
@@ -469,8 +469,8 @@ idVendor         2a39
 idProduct        3fc0
 bcdDevice        0001
 manufacturer     RME
-product          Babyface Pro (70784522)
-serial           BCB2604A1527EC8
+product          Babyface Pro (NNNNNNNN)
+serial           <serial redacted>
 version           2.00
 speed            480
 bNumInterfaces    6
@@ -548,8 +548,8 @@ snd                   163840  21 snd_seq,snd_seq_device,snd_hda_codec_hdmi,snd_h
 [ 2003.441769] usb 3-5.1.2: new high-speed USB device number 13 using xhci_hcd
 [ 2003.527806] usb 3-5.1.2: New USB device found, idVendor=2a39, idProduct=3fc0, bcdDevice= 0.01
 [ 2003.528066] usb 3-5.1.2: New USB device strings: Mfr=1, Product=2, SerialNumber=3
-[ 2003.528068] usb 3-5.1.2: Product: Babyface Pro (70784522)
+[ 2003.528068] usb 3-5.1.2: Product: Babyface Pro (NNNNNNNN)
 [ 2003.528069] usb 3-5.1.2: Manufacturer: RME
-[ 2003.528071] usb 3-5.1.2: SerialNumber: BCB2604A1527EC8
+[ 2003.528071] usb 3-5.1.2: SerialNumber: <serial redacted>
 
 === done -> ./probe-pc.txt ===

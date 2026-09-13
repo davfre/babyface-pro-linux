@@ -1,0 +1,28 @@
+bbf-measure v3.2, card FS, no cable
+
+== noise: gain law from the preamp noise floor ==
+   (no cable; the preamp amplifies its own input noise, so the
+    measured floor tracks real gain at the top of the range)
+
+  db set     measured       step
+      35       -83.08           
+      36       -91.21      -8.13
+      37       -92.61      -1.39
+      38       -89.45      +3.16
+      39       -89.58      -0.13
+      40       -89.60      -0.02
+      41       -86.65      +2.95
+      42       -86.66      -0.01
+      43       -86.63      +0.03
+      44       -83.72      +2.91
+      45       -83.75      -0.03
+      46       -83.76      -0.01
+      47       -83.71      +0.05
+      48       -80.58      +3.12
+      49       -80.60      -0.01
+      50       -80.56      +0.04
+
+   0.645 dB per dB of control over the top of the range (30 dB and up)
+   below that the converter's own noise floor dominates and the curve flattens
+
+restoring: gain 0, loopback off, master 256

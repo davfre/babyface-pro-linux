@@ -66,15 +66,21 @@ what the driver assumes and what RME publish.
 ### Does the older unit look like an FS over USB?
 
 **Yes, exactly.** Same vendor and product IDs in both modes, `2a39:3fb0`
-class compliant and `2a39:3fc0` proprietary. Same interface 5, same
-interrupt endpoints `0x01 OUT` and `0x82 IN`, same three altsettings
-carrying 448, 640 and 1024 byte packets. The driver binds and streams with
-no changes to the ID table or anything else.
+class compliant and `2a39:3fc0` proprietary.
+
+The rest applies to proprietary mode, the one this driver handles. Same
+interface 5, same interrupt endpoints `0x01 OUT` and `0x82 IN`, same three
+altsettings carrying 448, 640 and 1024 byte packets. The driver binds and
+streams with no changes to the ID table or anything else.
+
+Class compliant mode looks different, as it should: four interfaces rather
+than six, and isochronous streaming on interfaces 1 and 2.
 
 One consequence worth noting: the two models cannot be told apart by USB
 ID. If their calibration ever does differ, the driver has no way to pick.
 The `iProduct` string might serve, since this unit reports `Babyface Pro
-(70784522)` and an FS may say something else. Full descriptors in
+(NNNNNNNN)`, the digits being the unit's own number, and an FS may say
+something else. Full descriptors in
 `results/probe-cc.txt` and `results/probe-pc.txt`.
 
 ### Digital output master law
@@ -110,10 +116,11 @@ Two independent methods agree:
 | preamp noise floor, no cable | none, the preamp amplifies its own noise | raw 12 to 20 | 2.968 dB/step |
 | analog loop, cable patched | DAC, XLR out, cable, preamp, ADC | raw 0 to 15 | 2.972 dB/step |
 
-Each rig is only valid over part of the range. The noise method drowns in
-the converter's own noise floor at low gain. The cable method compresses at
-high gain, for reasons explained under "what the rig taught us" below. They
-overlap nowhere but agree to 0.004 dB/step.
+Each method is only valid over part of the range. The noise measurement needs
+enough gain to sit above the converter's own noise floor. The loop measurement
+needs levels below where it starts compressing, for reasons explained under
+"what the measurements taught us" below. They overlap nowhere but agree to
+0.004 dB/step.
 
 The register grid itself is correct. Every step produces a clean, distinct,
 monotonic change, at exactly the control values the driver's rounding
@@ -155,17 +162,17 @@ treat it as 0.5 dB per code.
 
 **Provisional, appears to differ.** We measured 0.427 to 0.490 dB per code,
 and not uniform across the range. But that measurement went through the
-cable rig at levels where it compresses, so the number may be an artifact.
+analog loop at levels where it compresses, so the number may be an artifact.
 It is the one figure here that should not be quoted until it is redone at
 lower levels.
 
 For context, the repo's own calibration file derives 0.486 dB per code and
 rounds it to 0.5, so there may be something real underneath.
 
-## What the rig taught us
+## What the measurements taught us
 
-The cable loop, output patched back into an input, compresses when the
-level arriving at the **preamp input** is high. Not when the preamp output
+The analog loop, output patched back into an input, compresses when the
+level arriving at the preamp input is high. Not when the preamp output
 is high, which is the intuitive assumption and the wrong one.
 
 That single fact explained three separate results that each looked like a
@@ -182,7 +189,7 @@ With PAD off, raising the master by 6 dB once produced a 22 dB jump into a
 full scale square wave. That is the input stage running out of headroom,
 which is the overload PAD exists to prevent.
 
-The practical rule: the cable rig is trustworthy only while the preamp
+The practical rule: the analog loop is trustworthy only while the preamp
 input is low. The no cable method has no input signal at all and is immune,
 which is why it is the one to publish and the one to ask others to
 reproduce.
@@ -229,7 +236,7 @@ Whether an FS measures 2.97 dB per step too. This decides whether the fix
 is one corrected constant or a per model calibration.
 
 Whether the 8 bit master law really deviates, once remeasured at levels
-where the rig is linear.
+where the loop is linear.
 
 Whether `iProduct` or `bcdDevice` differ between the models, which decides
 whether per model behaviour is even possible.

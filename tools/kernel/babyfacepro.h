@@ -254,6 +254,10 @@ extern const u8 bf_xpoint_block[6];
 
 /* Calibrated preamp gain: 65 dB over 20 raw steps (3.25 dB/step). */
 #define BF_GAIN_MAX_DB			65
+/* Mic gain is packed: bits 0-4 coarse (3 dB), bits 5-7 the 0-2 dB rest. */
+#define BF_GAIN_COARSE_MASK		0x1f
+#define BF_GAIN_COARSE_MAX		20
+#define BF_GAIN_FINE_SHIFT		5
 
 struct snd_usb_babyface {
 	struct snd_card *card;
@@ -291,7 +295,6 @@ struct snd_usb_babyface {
 					 * at write: mic 3.25 dB/step, instr
 					 * 0.5 dB/step)
 					 */
-	u8 gain_cycle;			/* 0x20/0x00/0x40 transaction counter */
 	u8 flag_cnt;			/* 0xc000/0x4000/0x8000/0x0000 */
 	u16 master[6][2];		/* cached 16-bit masters */
 	bool muted[6];
@@ -381,7 +384,6 @@ struct bf_saved {
 	char key[32];
 	u16 preamp;
 	u8 gain[4];
-	u8 gain_cycle;
 	u8 flag_cnt;
 	u16 master[6][2];
 	bool muted[6];

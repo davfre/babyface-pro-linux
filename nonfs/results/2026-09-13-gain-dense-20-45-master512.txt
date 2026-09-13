@@ -1,0 +1,41 @@
+bbf-measure v3.1, card FS, analog loop patched
+phantom power state (check this is off before trusting it):
+   numid=13 : values=off
+   numid=14 : values=off
+
+== gain: mic preamp law ==
+   master 512 (-24.0 dB), fixed
+   (pass --gain-master to fix this, so a before/after pair is
+    measured at the same output level)
+
+  db set     measured       step      peak
+      20       -64.37                0.001
+      21       -63.63      +0.74     0.001
+      22       -62.88      +0.75     0.001
+      23       -62.15      +0.73     0.001
+      24       -61.51      +0.65     0.001
+      25       -60.82      +0.68     0.001
+      26       -60.17      +0.66     0.001
+      27       -59.50      +0.67     0.002
+      28       -58.89      +0.60     0.002
+      29       -58.32      +0.58     0.002
+      30       -57.78      +0.54     0.002
+      31        -1.88     +55.90     1.000  CLIP
+      32        -0.99      +0.90     1.000  CLIP
+      33        -1.04      -0.06     1.000  CLIP
+      34        -0.81      +0.23     1.000  CLIP
+      35        -0.72      +0.09     1.000  CLIP
+      36        -0.93      -0.22     1.000  CLIP
+      37        -0.76      +0.18     1.000  CLIP
+      38        -0.70      +0.06     1.000  CLIP
+      39        -0.91      -0.22     1.000  CLIP
+      40        -0.74      +0.17     1.000  CLIP
+      41        -0.68      +0.06     1.000  CLIP
+      42        -0.91      -0.23     1.000  CLIP
+      43        -0.73      +0.18     1.000  CLIP
+      44        -0.66      +0.07     1.000  CLIP
+      45        -0.92      -0.26     1.000  CLIP
+   0.662 dB measured per dB of control (1.000 = correct)
+   span 6.6 dB measured across 10 dB of control
+
+restoring: gain 0, loopback off, master 256

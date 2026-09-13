@@ -1,0 +1,33 @@
+bbf-measure v3.0, card FS, analog loop patched
+phantom power state (check this is off before trusting it):
+   numid=13 : values=off
+   numid=14 : values=off
+
+== gain: mic preamp law ==
+   master 8 (-60.0 dB), fixed
+   (pass --gain-master to fix this, so a before/after pair is
+    measured at the same output level)
+
+  db set     measured       step      peak
+       0      -111.66                0.000
+       5      -107.17      +4.48     0.000
+      10      -100.10      +7.07     0.000
+      15       -91.73      +8.37     0.000
+      20       -86.00      +5.73     0.000
+      25       -79.32      +6.68     0.000
+      30       -75.74      +3.58     0.000
+      31       -82.75      -7.01     0.000
+      32       -83.55      -0.81     0.000
+      35       -80.80      +2.75     0.000
+      40       -75.74      +5.06     0.001
+      45       -70.88      +4.87     0.001
+      50       -66.10      +4.78     0.002
+      55       -61.23      +4.87     0.003
+      60       -56.52      +4.71     0.007
+      65       -49.23      +7.29     0.017
+
+   30, 31 and 32 dB differ by 7.82 dB in total: the control resolves 1 dB
+   0.871 dB measured per dB of control (1.000 = correct)
+   span 62.4 dB measured across 65 dB of control
+
+restoring: gain 0, loopback off, master 256

@@ -30,8 +30,8 @@ Device Descriptor:
   idProduct          0x3fb0 Babyface Pro (Class Compliant Mode)
   bcdDevice            0.01
   iManufacturer           1 RME
-  iProduct                2 Babyface Pro (70784522)
-  iSerial                 3 BCB2604A1527EC8
+  iProduct                2 Babyface Pro (NNNNNNNN)
+  iSerial                 3 <serial redacted>
   bNumConfigurations      1
   Configuration Descriptor:
     bLength                 9
@@ -369,7 +369,7 @@ Device Descriptor:
       bInterfaceClass         1 Audio
       bInterfaceSubClass      3 MIDI Streaming
       bInterfaceProtocol      0 
-      iInterface              2 Babyface Pro (70784522)
+      iInterface              2 Babyface Pro (NNNNNNNN)
       MIDIStreaming Interface Descriptor:
         bLength                 7
         bDescriptorType        36
@@ -500,8 +500,8 @@ idVendor         2a39
 idProduct        3fb0
 bcdDevice        0001
 manufacturer     RME
-product          Babyface Pro (70784522)
-serial           BCB2604A1527EC8
+product          Babyface Pro (NNNNNNNN)
+serial           <serial redacted>
 version           2.00
 speed            480
 bNumInterfaces    4
@@ -518,8 +518,8 @@ drivers bound:
                       HD-Audio Generic at 0xdf580000 irq 142
  2 [Camera         ]: USB-Audio - UGREEN Camera
                       UGREEN Camera UGREEN Camera at usb-0000:0c:00.0-5, high speed
- 3 [Pro70784522    ]: USB-Audio - Babyface Pro (70784522)
-                      RME Babyface Pro (70784522) at usb-0000:0e:00.0-5.1.2, high speed
+ 3 [ProNNNNNNNN    ]: USB-Audio - Babyface Pro (NNNNNNNN)
+                      RME Babyface Pro (NNNNNNNN) at usb-0000:0e:00.0-5.1.2, high speed
  4 [USBMIDI        ]: USB-Audio - USB-MIDI
                       USB-MIDI at usb-0000:0e:00.0-5.1.3, full speed
 --- /proc/asound/card2/stream0
@@ -537,7 +537,7 @@ Capture:
     Bits: 16
     Channel map: FL FR
 --- /proc/asound/card3/stream0
-RME Babyface Pro (70784522) at usb-0000:0e:00.0-5.1.2, high speed : USB Audio
+RME Babyface Pro (NNNNNNNN) at usb-0000:0e:00.0-5.1.2, high speed : USB Audio
 
 Playback:
   Status: Running
