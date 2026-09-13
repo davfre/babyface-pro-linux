@@ -1,0 +1,133 @@
+From 3d7110cec497dae301dfd8a77ab0004e69e837cf Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Isma=C3=AFl=20Bahloul?= <i.bahloul01@gmail.com>
+Date: Sun, 13 Sep 2026 19:39:53 +0100
+Subject: [RFC PATCH v4 0/3] ALSA: usb: add RME Babyface Pro driver (proprietary mode)
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Hi,
+
+This is v4 of the RFC for a driver for the RME Babyface Pro in its
+proprietary USB mode (VID 0x2a39, PID 0x3fc0).  In that mode the PCM
+stream runs on interrupt endpoints instead of the class-compliant
+isochronous path, so it cannot be a quirk on top of snd-usb-audio and
+needs a standalone driver, modelled on snd-usb-caiaq.
+
+Changes since v3:
+
+ - Two real bugs found, diagnosed and fixed by David Fredman, who also
+   became this driver's second tester:
+
+   * The stream URBs were submitted without URB_NO_TRANSFER_DMA_MAP
+     even though their buffers come from usb_alloc_coherent(), so the
+     USB core tried to map them a second time and failed with -EAGAIN
+     on any IOMMU-translated host.  That is the default on current AMD
+     and Intel desktops, which means v3 as posted would not have
+     streamed at all on most machines.  Every other sound/usb driver
+     that allocates coherent buffers sets this flag; this one was the
+     exception.
+
+   * The mic preamp gain register was decoded as a 5-bit value plus a
+     rotating transaction counter.  Bits 5-7 are in fact the fine part
+     of the gain: value = (fine << 5) | coarse, coarse 3 dB per step
+     saturating at 20, fine the 0-2 dB remainder.  The control was
+     therefore reaching 21 of its 66 positions, and because the
+     rotating value landed in those same bits, the gain actually
+     applied depended on where the rotation stood - the same requested
+     setting did not give a repeatable gain.  Measured on hardware
+     before and after: 0.808 dB per dB of control, against 1.000 after
+     the fix.
+
+ - The driver is no longer FS-specific.  It runs unmodified on an
+   original (2015) Babyface Pro; the two models share VID:PID,
+   bcdDevice and iProduct shape, and nothing in the descriptors tells
+   them apart.  card->driver, the card id, the shortname and the
+   Kconfig text are model-neutral accordingly.  This seemed worth
+   getting right before the strings are frozen by a release, since
+   card->driver is what alsa-lib configs and UCM profiles match on.
+
+ - The power-on mixer no longer comes up at unity.  The default routes
+   all 14 sources into every output, and they sum, on every fresh
+   module load before alsa-restore can restore the user's levels.  The
+   masters now come up at -20 dB, which is the level the hardware's own
+   DIM button writes.
+
+ - The front-panel DIM button acts now instead of only being decoded.
+   SET already toggled phantom from the same poll.
+
+ - Added dB TLV information to the preamp gain, trim and crosspoint
+   controls; only the output masters had any before.
+
+ - Fixed a state-restore bug in the input trim: it is one shared
+   register per input pair but two per-channel controls, and the
+   restore replayed the pair from its even index, so a trim set on the
+   odd channel was silently dropped on re-probe.
+
+ - Split into three patches rather than the four of v3.  The v3 split
+   put the mixer in its own patch, which meant earlier patches carried
+   stub control functions that later patches replaced.  The mixer and
+   the core share the device state structure and the whole
+   save/restore path, so that seam was artificial.  The front panel
+   and the DSP EQ are genuinely separable: each of the three patches
+   here contains only final code, nothing a later patch rewrites, and
+   each builds in-tree on its own.
+
+Known limitations, stated up front:
+
+ - USB autosuspend is not supported.  It is explicitly disabled at
+   probe rather than left as an untested path: the panel poll and
+   keepalive work items run continuously and nothing pairs
+   usb_autopm_get/put around the stream.  S3 suspend/resume works and
+   is tested.
+
+ - A few protocol details are not fully pinned down and are documented
+   as open: the preamp readback index semantics, a width
+   strip-ownership edge case, and the exact high-frequency warping of
+   the EQ coefficients against the vendor curve.  None of them affect
+   the shipped controls.
+
+ - The latency profile is chosen at load time through the
+   frames_per_urb and nurbs module parameters; changing it means a
+   module reload.  Runtime reconfiguration is a follow-up.
+
+Validation: a full-duplex sweep across the whole rate x period matrix
+with a signal-integrity tap, 30 start/stop cycles, mixer-state restore
+across an interface unbind/rebind, and a mid-stream disconnect - 40 of
+40 on the current tree.  Each patch was also built in-tree on its own
+against next-20260911.
+
+I am still mainly after feedback on the interrupt-URB PCM design, the
+control naming and topology, and the subdirectory layout.
+
+Disclosure: the reverse-engineering (decoding the USB captures, the
+magic packets and the front-panel behaviour) and substantial portions
+of the kernel implementation were written with heavy assistance from
+AI coding assistants, credited per patch as Assisted-by.  All of it
+was verified by hand on real hardware; the human authors remain
+responsible for the result via Signed-off-by.
+
+Thanks for reading,
+Ismaïl
+
+Ismaïl Bahloul (3):
+  ALSA: usb: add RME Babyface Pro driver (proprietary mode)
+  ALSA: usb: babyfacepro: add the front-panel poll and controls
+  ALSA: usb: babyfacepro: add the hardware DSP EQ
+
+ MAINTAINERS                             |    6 +
+ sound/usb/Kconfig                       |   20 +
+ sound/usb/Makefile                      |    2 +-
+ sound/usb/babyfacepro/Makefile          |    4 +
+ sound/usb/babyfacepro/babyfacepro-ctl.c | 3453 +++++++++++++++++++++++
+ sound/usb/babyfacepro/babyfacepro.c     | 1603 +++++++++++
+ sound/usb/babyfacepro/babyfacepro.h     |  487 ++++
+ 7 files changed, 5574 insertions(+), 1 deletion(-)
+ create mode 100644 sound/usb/babyfacepro/Makefile
+ create mode 100644 sound/usb/babyfacepro/babyfacepro-ctl.c
+ create mode 100644 sound/usb/babyfacepro/babyfacepro.c
+ create mode 100644 sound/usb/babyfacepro/babyfacepro.h
+
+-- 
+2.55.0
+

@@ -76,12 +76,10 @@ S:	Maintained
 F:	sound/usb/babyfacepro/
 ```
 
-The RFC patch series (`git format-patch` output of exactly this
-diff, built and verified against a real linux-next checkout — see item
-7 below) lives at `patches/000[1-4]-*.patch`.  It is a 4-patch series:
-core+PCM, mixer, front panel, DSP EQ — each patch builds in-tree (the
-control surface is stubbed in patch 1 so the module links at every
-step).
+The current RFC series is `patches/v4-000[0-3]-*.patch`, three patches
+plus a cover letter, generated against next-20260911 — see the "v4"
+section below for how it is cut and why. `patches/v3-*` is kept beside
+it as the record of what was actually mailed on 2026-09-02.
 
 ## Before sending (reviewer will ask)
 
@@ -175,7 +173,60 @@ step).
    linux-sound@vger.kernel.org, linux-kernel@vger.kernel.org. Re-run
    before actually mailing — MAINTAINERS entries can change.
 
-## v4 (not sent yet - what has accumulated since v3)
+## v4 - CUT 2026-09-13, not sent
+
+`patches/v4-000[0-3]-*.patch`, generated against **next-20260911**.
+Three patches, not four:
+
+- `[1/3]` core + PCM + the ALSA mixer
+- `[2/3]` the front-panel poll and controls
+- `[3/3]` the hardware DSP EQ
+
+**Why three and not four.** v3 split the mixer into its own patch,
+which forced the earlier patches to carry stub control functions that
+later patches replaced. The mixer and the core share
+`struct snd_usb_babyface` and the entire save/restore path -
+`bf_saved` *is* mixer state - so that seam was artificial and made
+review harder, not easier. The panel and the EQ do separate cleanly:
+the driver builds with zero warnings without either. **Every patch
+here contains only final code; nothing a later patch rewrites.** Each
+was built in-tree on its own (`make sound/usb/babyfacepro/` after
+checking out that commit), 0 errors and 0 warnings at each step.
+
+Verification on the generated patch files, not just the sources:
+
+- checkpatch --strict: `[2/3]` is 0/0/0; `[3/3]` has the two known
+  `ang` false positives; `[1/3]` has the one known `BIT()` CHECK plus
+  two deliberate ERRORs, see the blocker below.
+- **Zero non-ASCII** in any added line (the author's name aside).
+  v3 did **not** have this property: `v3-0001` and `v3-0002` shipped 8
+  added lines with em dashes and box-drawing characters, in the stub
+  glue, after the v3 cover letter told Takashi "Converted all comments
+  to plain ASCII". The ASCII pass had been run on the repo sources
+  only, and the stub code existed nowhere else - the same shape of
+  mistake as the regress.sh S24_LE breakage. Hence: check the
+  generated patches, not the sources.
+- Two bugs were caught by that verification while cutting v4: a
+  `----------------` heading underline in the `[1/3]` commit message
+  (`git am` would have truncated the message there, dropping exactly
+  the "stream model" explanation Takashi had asked for), and a
+  `get_maintainer.pl` run that pulled the whole Rust for Linux team in
+  because two comments mentioned the userspace app's Rust
+  implementation.
+
+**BLOCKER: the series cannot be sent yet.** `[1/3]` carries
+`FILL-IN-BEFORE-SENDING` in David Fredman's `Co-developed-by:` and
+`Signed-off-by:`. His GitHub author address is a
+`users.noreply.github.com` one, which is not DCO-valid. The
+placeholder is deliberate and fail-safe: checkpatch reports it as an
+ERROR and `git send-email` cannot parse it as an address, so the
+series cannot go out with his credit missing or wrong. He has been
+asked for the name and address he wants (issue #4, 2026-09-13).
+
+The integration branch lives at `~/DATA/05_Code/linux-next-src`,
+branch `v4b`.
+
+## What went into v4 since v3
 
 v3 went out 2026-09-02 (4 patches + cover letter, archived on
 lore/linux-sound). No reviewer reply as of 2026-09-13. Meanwhile the
@@ -284,10 +335,12 @@ in-tree, then `git format-patch` the series again.
 
 ## Cover letter
 
-The mailing cover letter (0/N email, separate from the 1/N patch) is
-`patches/COVER-LETTER.md` — includes the known-limitations block
-(autosuspend, open protocol items, load-time latency profile) that the
-`Before sending` items below ask to state explicitly.
+The cover letter is generated with the series and lives at
+`patches/v4-0000-cover-letter.patch` — it carries the v3 -> v4
+changelog and the known-limitations block (autosuspend, open protocol
+items, load-time latency profile) that the `Before sending` items ask
+to state explicitly. `patches/COVER-LETTER.md` is the older
+hand-written markdown version, kept for its history only.
 
 ## Follow-ups (post-merge)
 

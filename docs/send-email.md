@@ -30,17 +30,41 @@ git config sendemail.from "Ismaïl Bahloul <i.bahloul01@gmail.com>"
 git config sendemail.confirm auto
 ```
 
-## Generate the series (threaded cover letter + 4 patches)
+## Generate the series (threaded cover letter + 3 patches)
 
-From a linux-next checkout where the driver has been integrated
-(`sound/usb/babyfacepro/` + Makefile/Kconfig/MAINTAINERS):
+From the linux-next checkout where the driver is integrated
+(`sound/usb/babyfacepro/` + Makefile/Kconfig/MAINTAINERS), on the
+branch holding the series:
 
 ```sh
-git format-patch --rfc -4 --cover-letter -o /tmp/rfcpatch/ origin/master..HEAD
-# edit /tmp/rfcpatch/0000-cover-letter.patch:
-#   replace "*** SUBJECT HERE ***" with the real subject
-#   replace "*** BLURB HERE ***" with the body (see patches/COVER-LETTER.md)
+git format-patch --rfc --cover-letter -v4 -o /tmp/v4 origin/master..v4b
 ```
+
+**Two traps that bit v4 while it was being cut:**
+
+1. The linux-next clone's local git config still says
+   `Iswad <iswadlillah@gmail.com>`. The commits are fine (they were
+   made with `-c user.name/-c user.email`), but `format-patch` stamps
+   the **cover letter** with the config identity, so it came out under
+   the old name while every patch said the right one. Either fix the
+   clone's local config or pass `--from=`.
+2. Do not put a line of dashes in a commit message. A
+   `----------------` underline under a section heading looks like the
+   `---` separator to `git am`, which truncates the message there.
+   checkpatch catches it ("Invalid commit separator"), so always run
+   checkpatch on the **generated patch files**, not only on the
+   sources.
+
+## Before sending: the blocker
+
+Patch 1 carries `FILL-IN-BEFORE-SENDING` in place of David Fredman's
+address, in both the `Co-developed-by:` and his `Signed-off-by:`. His
+GitHub author address is a `users.noreply.github.com` one, which is
+not valid for the DCO. The placeholder is deliberate: checkpatch
+reports it as an ERROR and `git send-email` cannot parse it as an
+address, so the series cannot go out by accident with his credit
+missing or wrong. He has been asked for the name and address he wants
+(issue #4).
 
 ## Send
 
@@ -55,20 +79,24 @@ git send-email \
   --cc=perex@perex.cz \
   --cc=tiwai@suse.com \
   --cc=linux-kernel@vger.kernel.org \
-  patches/v3-0000-cover-letter.patch \
-  patches/v3-0001-ALSA-usb-add-RME-Babyface-Pro-FS-driver-proprieta.patch \
-  patches/v3-0002-ALSA-usb-babyface-pro-add-the-mixer-control-surfa.patch \
-  patches/v3-0003-ALSA-usb-babyface-pro-add-the-front-panel-poll-co.patch \
-  patches/v3-0004-ALSA-usb-babyface-pro-add-the-hardware-DSP-EQ.patch
+  patches/v4-0000-cover-letter.patch \
+  patches/v4-0001-ALSA-usb-add-RME-Babyface-Pro-driver-proprietary-.patch \
+  patches/v4-0002-ALSA-usb-babyfacepro-add-the-front-panel-poll-and.patch \
+  patches/v4-0003-ALSA-usb-babyfacepro-add-the-hardware-DSP-EQ.patch
 ```
 
 At the `Password for 'smtp.gmail.com':` prompt, paste the App Password
 (spaces are OK). At the `Send this email?` prompt, `a` confirms all
-emails in the series. `Result: 250` after each email means it was
-accepted.
+emails in the series. `Result: 250` after each email means accepted.
 
 ## Recipient notes
 
 - Re-run `get_maintainer.pl` before mailing, MAINTAINERS entries change.
+- It is clean as of 2026-09-13: Jaroslav Kysela, Takashi Iwai and the
+  sound lists. It was **not** clean before that date: two comments
+  mentioned the userspace app's Rust implementation, and
+  `get_maintainer.pl` matches `\brust\b`, so it pulled the entire Rust
+  for Linux review team and rust-for-linux@vger.kernel.org onto a USB
+  audio patch. The word is gone from the sources; keep it that way.
 - `alsa-devel` is moderated for non-subscribers, so that copy may be
   delayed; `linux-sound` and `linux-kernel` go out immediately.
