@@ -16,31 +16,31 @@ him. Merge and reply should go out together, or the reply first.
 
 ## PR #3 — DMA mapping
 
-Merged, thank you — and thank you for diagnosing it rather than just patching it, that is what made it quick to confirm.
+Merged, thanks! And thanks for digging into the why instead of just throwing a patch at me, that's what made it quick to check.
 
-You are right about the cause. The coherent DMA addresses were being tracked in `chip->dma_in[]` / `chip->dma_out[]` and then never used for anything except `usb_free_coherent()` at teardown, which is the shape of an omission rather than a decision. For what it is worth, every other driver under `sound/usb` that allocates coherent buffers sets the flag the way you do here — `endpoint.c`, `midi.c`, `midi2.c`, `misc/ua101.c` — so this one was the odd one out.
+Your diagnosis is spot on. The DMA addresses were sitting in `chip->dma_in[]` / `chip->dma_out[]` doing nothing except getting freed again at teardown, which is pretty clearly me forgetting a step rather than deciding anything. I went and looked at the neighbours: every driver in `sound/usb` that uses `usb_alloc_coherent` sets the flag the way you do here (`endpoint.c`, `midi.c`, `midi2.c`, `misc/ua101.c`). Mine was the only one that didn't.
 
-This matters more than a local bug report. The RFC series currently sitting on linux-sound has the defect, which means it would not have streamed on most modern desktops if a reviewer had tried it. It goes into v4.
+Slightly alarming side effect: the RFC series I currently have sitting on linux-sound has this bug in it. So if a maintainer had actually plugged a Babyface in and tried it, it just wouldn't have worked. Good timing on your part. It goes into v4.
 
-Sorry for merging before writing back — that also auto-closed #1 on you with no explanation. Not how I meant to handle a first contribution.
+Sorry for merging before writing back, that auto-closed #1 on you with no explanation. Not the first impression I wanted to give someone's first contribution here.
 
 ---
 
 ## Issue #1 — stream never starts with an IOMMU
 
-Closed automatically by the merge of #3 — apologies for the silent close, the push carried the `Fixes #1` trailer before I had written anything back to you.
+Closed automatically when #3 got merged. Sorry about that, the commit had a `Fixes #1` trailer and I pushed before writing anything back to you.
 
-The fix is in `main`. The reasoning and the in-tree precedent are in the comment on #3.
+Fix is in `main`, details are on #3.
 
 ---
 
 ## PR #2 — mic gain encoding
 
-Merged. I checked this one rather than taking it on trust, and the result is worth writing down, because the evidence was already sitting in my own tree.
+Merged. I wanted to check this one myself before believing it, and honestly the result is a bit embarrassing for me, because the proof was already sitting in my own repo.
 
-`PROTOCOL.md` documented bits 5-7 as a transaction counter and quoted five captured wValues as the proof: `0x2A, 0x0A, 0x49, 0x29, 0x09`. Under your encoding those decode to **31, 30, 29, 28, 27 dB** — a knob being dragged down one dB at a time. Running the same decode over the whole of `ctlout_gain_solo.txt` (59 distinct writes on mic 1) gives a clean human fader drag — 31 down to 8, back up, down to 0, up to 7, down to 0 — with **57 of 58 transitions being exactly 1 dB**, the single exception a skipped dB during a fast drag. That capture is from an FS, so the encoding is the same on both models.
+`PROTOCOL.md` says bits 5-7 are a transaction counter, and it quotes five captured wValues as the evidence: `0x2A, 0x0A, 0x49, 0x29, 0x09`. Decode those with your encoding and you get **31, 30, 29, 28, 27 dB**. That's just someone dragging a knob down one dB at a time. So I ran the same decode over all of `ctlout_gain_solo.txt` (59 distinct writes on mic 1) and got a completely normal fader drag out of it: 31 down to 8, back up, down to 0, up to 7, down to 0, with **57 of 58 steps being exactly 1 dB**. The one exception is a skipped dB during a fast drag. That capture is from an FS, so the encoding is the same on both models.
 
-I also ran your no-cable sweep here, on an FS, Mic 2 with nothing connected and phantom off, measuring the preamp noise floor from 35 to 50 dB:
+I also ran your no-cable sweep here on the FS, Mic 2, nothing plugged in, phantom off:
 
 | | before | after |
 |---|---|---|
@@ -49,43 +49,43 @@ I also ran your no-cable sweep here, on an FS, Mic 2 with nothing connected and 
 | mean step | +0.74 dB | +0.94 dB |
 | worst step | **−0.99 dB** | +0.40 dB |
 
-Your non-FS gave 1.001, this FS gives 1.000.
+Yours gave 1.001 on the non-FS, mine gives 1.000.
 
-The worst-step row is the part I had not appreciated from your write-up: those negative steps are the rotating value landing in the fine-gain bits, so asking for **+1 dB could move the gain down**, and the same requested setting did not even give a repeatable gain. That is a good deal worse than the resolution loss.
+The "worst step" row is the bit I hadn't picked up from your write-up. Those negative steps are the rotating value landing in the fine-gain bits, so asking for **+1 dB could actually make it quieter**, and setting the same value twice didn't even give the same gain. That's a lot worse than just losing resolution.
 
-`PROTOCOL.md` is corrected, with the old reading kept and marked superseded rather than deleted, so the record of how it came to be wrong stays readable. The old sweep note that reported "~2 dB per step, clamps at raw 23" is explained too: it was walking the packed byte rather than a linear gain index.
+PROTOCOL.md is fixed. I kept the old wrong explanation in place marked as superseded rather than deleting it, so it's clear how it went wrong. That also explains the old sweep that reported "~2 dB per step, clamps at raw 23": it was walking the packed byte instead of a linear gain index.
 
-One thing I owe you: that same note already said the absolute raw→dB anchor had never been measured and that a Windows capture with known dB values was needed. The capture was in the tree the whole time. Thank you for actually looking.
+The part that stings a bit is that the same note already said the raw→dB anchor had never actually been measured, and that settling it would need a Windows capture with known dB values. That capture was already in the repo. Thanks for being the one to go and look.
 
 ---
 
 ## Issue #4 — non-FS unit, measurements and notes
 
-Thank you for this — a second unit, a second model and a repeatable measurement method are worth more to this driver than the two patches on their own. Taking your points in order.
+This is great, thank you. Honestly a second unit, a different model and a repeatable way to measure things is worth more to this driver than the two patches on their own. Going through your points in order.
 
-**The descriptors.** I can answer this one directly. My FS reports:
+**Descriptors.** I can answer this one straight away. My FS reports:
 
 ```
 idVendor 2a39   idProduct 3fc0   bcdDevice 0001
 iProduct "Babyface Pro (73055480)"
 ```
 
-Same `bcdDevice` 0.01 as yours, same `iProduct` shape — and note my **FS does not say "FS" anywhere either**. So the two models look indistinguishable from the descriptors, which kills the neat version of your suggestion: taking the card name from `iProduct` would name both units `Babyface Pro (<serial>)`, serial number and all.
+Same `bcdDevice` as yours, same `iProduct` shape, and this bit surprised me: **my FS doesn't say "FS" anywhere either**. So as far as I can tell the two models are simply indistinguishable from the descriptors. Which unfortunately kills the clean version of your idea, since pulling the card name from `iProduct` would give both units `Babyface Pro (<serial>)`, serial number and all.
 
-It does not make the underlying point wrong, though, and I have acted on it.
+Your actual point stands though, and I've acted on it.
 
-**Card naming — changed, before it can freeze.** `card->driver` is now `BabyfacePro`, shortname `Babyface Pro`. Your unit should stop announcing itself as an FS. While testing that I hit something you could not have seen: the card *id* is derived by the core from the last word of the shortname, so it was `hw:FS` before and became `hw:Pro` after the rename — both useless. It is derived caiaq-style now, whitespace stripped from the shortname, and reads `hw:BabyfacePro`.
+**Card naming, changed.** `card->driver` is `BabyfacePro` now, shortname `Babyface Pro`. Your unit should stop announcing itself as an FS. While testing that I ran into something you couldn't have known about: ALSA derives the card *id* from the last word of the shortname, so it was `hw:FS` before and turned into `hw:Pro` after the rename. Both useless. I'm deriving it caiaq-style now and it comes out `hw:BabyfacePro`.
 
-**Unity on every load — changed.** You were right, and it was slightly worse than you put it: the default routes all 14 sources into every output at 0 dB each, so they **sum**, on every fresh load, before alsa-restore can put the user's levels back. Masters now come up at **−20 dB**, your suggested figure. I used the exact 8-bit/16-bit register pair the hardware's own DIM button writes, so it is a measured value rather than one I picked. The routing default is unchanged, so the card still makes sound with nothing in user space.
+**Unity on every load, changed.** You were right, and it's a bit worse than you described: the default routes all 14 sources into every output at 0 dB each, so they **sum**, and that runs on every fresh module load, before alsa-restore gets a chance to put the user's levels back. Masters now come up at **−20 dB**, the figure you suggested. I used the exact 8-bit/16-bit register pair the hardware's own DIM button writes, so at least it's a value the device already uses rather than one I made up. Routing default is unchanged, so the card still makes sound with nothing in user space.
 
-One consequence worth knowing: DIM applies an **absolute** −20 dB, so with the new default it does nothing audible until a master is raised above that. That is how the hardware has always behaved; it is just visible from the first second now.
+One side effect you'll probably notice: DIM is an **absolute** −20 dB, so with the new default it doesn't do anything audible until you push a master above that. That's always been true of the hardware, it's just obvious from the first second now.
 
-**DIM — it acts now.** Same host-in-the-loop arrangement as SET, which already toggled phantom from the same poll, so there was no principle being upheld by leaving DIM inert. The README was overclaiming and is corrected. Tested with the physical button: two presses give two `Dim Switch` events and two `Front Panel Dim` events, clean toggle round-trip, nothing in dmesg.
+**DIM, it works now.** Same host-in-the-loop arrangement as SET, which already toggled phantom from the same poll, so there wasn't really a principle being defended by leaving DIM inert. The README was overclaiming and I've fixed that too. Tested with the actual button: two presses, two `Dim Switch` events, two `Front Panel Dim` events, toggles back and forth cleanly, nothing in dmesg.
 
-One detail from that capture does not match your description, and I would rather flag it than quietly repeat it. You wrote that pressing DIM "changes `Front Panel Button` and nothing else". Here the press moves **`Front Panel Dim`**, and `Front Panel Button` did not move at all in the capture. It makes no difference to the fix, and I have not chased it — but if you were watching `Front Panel Button` to decide the button was inert, that may be why. A real difference between the two units would be more interesting than a miscapture on my side, so it is worth a glance if you are ever looking.
+One thing from that test doesn't match what you saw, and I'd rather say so than quietly go along with it. You wrote that pressing DIM "changes `Front Panel Button` and nothing else". Over here the press moves **`Front Panel Dim`**, and `Front Panel Button` didn't move at all. Doesn't affect the fix and I haven't chased it, but if you were watching `Front Panel Button` to decide the button did nothing, that might be why. If it's a real difference between the two units that's more interesting than me miscapturing, so worth a look if you're ever in there.
 
-**Control naming — agreed, and deliberately still open.** Particularly that indices 2 and 3 are Hi-Z instrument inputs called "Mic", running 0-9 dB rather than 0-65. The crosspoints already name themselves per source, so there is a pattern to follow. I have left it alone for now only because renaming ALSA controls breaks anything matching the current names, so I would rather decide it in one pass together with any other naming change than piecemeal.
+**Control naming, you're right, and I've left it alone on purpose.** Especially that indices 2 and 3 are Hi-Z instrument inputs called "Mic" running 0-9 dB instead of 0-65. The crosspoints already name themselves per source so there's a pattern to copy. The only reason I haven't done it is that renaming ALSA controls breaks anything matching the old names, so I'd rather do it in one pass with any other naming change than dribble it out.
 
-**What would help most.** Yes to the scripts and the raw output, please, especially the measurement harness. I would also like to cite the non-FS result in the next RFC round — reviewers were always going to ask how many units this had ever run on, and "one" was the honest answer until today. Tell me if you would rather I did not.
+**What would help most.** Yes please to the scripts and the raw output, especially the measurement harness. I'd also like to mention the non-FS result in the next RFC round. Reviewers were always going to ask how many units this has ever run on, and until today the honest answer was "one". Say the word if you'd rather I didn't.
 
-On attribution: your two commits keep your authorship, and I will carry them into the kernel submission under your own `Signed-off-by` rather than folding them into mine. Tell me which name and address you want on them.
+On credit: your two commits keep your authorship, and I'll carry them into the kernel submission under your own `Signed-off-by` rather than folding them into mine. Let me know what name and email you want on them.
