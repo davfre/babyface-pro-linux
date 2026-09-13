@@ -1,4 +1,8 @@
 #!/bin/sh
+# Superseded. The driver does this itself now, on the 'local: make the DIM
+# button work' commit: it acts on the button press and attenuates AN1/2 and
+# PH3/4 by 20 dB. Kept only for running against an unpatched driver.
+#
 # Make the front-panel DIM button act.
 #
 # The driver leaves acting on the front panel to TuxMix, so with the
