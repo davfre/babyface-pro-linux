@@ -31,8 +31,8 @@ need() {
 	}
 }
 need 'Front Panel Dim'
-[ "$MODE" = "--main-only" ] || need 'Dim Switch'
-[ "$MODE" = "--phones-only" ] || need 'AN1/2 Playback Volume'
+if [ "$MODE" != "--main-only" ]; then need 'Dim Switch'; fi
+if [ "$MODE" != "--phones-only" ]; then need 'AN1/2 Playback Volume'; fi
 
 read_ctl() {
 	amixer -c "$CARD" cget name="$1" | sed -n 's/^  : values=//p' | head -1
@@ -41,11 +41,17 @@ read_ctl() {
 saved=''
 
 engage() {
-	[ "$MODE" = "--main-only" ] || amixer -c "$CARD" -q cset name='Dim Switch' on
-	[ "$MODE" = "--phones-only" ] && return 0
+	if [ "$MODE" != "--main-only" ]; then
+		amixer -c "$CARD" -q cset name='Dim Switch' on
+	fi
+	if [ "$MODE" = "--phones-only" ]; then
+		return 0
+	fi
 	# Only save once: a restart while already dimmed must not capture
 	# the dimmed level as the thing to restore.
-	[ -n "$saved" ] && return 0
+	if [ -n "$saved" ]; then
+		return 0
+	fi
 	saved=$(read_ctl 'AN1/2 Playback Volume')
 	l=${saved%%,*}
 	r=${saved##*,}
@@ -54,9 +60,15 @@ engage() {
 }
 
 release() {
-	[ "$MODE" = "--main-only" ] || amixer -c "$CARD" -q cset name='Dim Switch' off
-	[ "$MODE" = "--phones-only" ] && return 0
-	[ -z "$saved" ] && return 0
+	if [ "$MODE" != "--main-only" ]; then
+		amixer -c "$CARD" -q cset name='Dim Switch' off
+	fi
+	if [ "$MODE" = "--phones-only" ]; then
+		return 0
+	fi
+	if [ -z "$saved" ]; then
+		return 0
+	fi
 	amixer -c "$CARD" -q cset name='AN1/2 Playback Volume' "$saved"
 	saved=''
 }
@@ -65,7 +77,9 @@ last=$(read_ctl 'Front Panel Dim')	# adopt the current state, do not act
 
 alsactl monitor "$CARD" | while read -r _; do
 	now=$(read_ctl 'Front Panel Dim')
-	[ "$now" = "$last" ] && continue
+	if [ "$now" = "$last" ]; then
+		continue
+	fi
 	last="$now"
 	case "$now" in
 	on)	engage ;;
