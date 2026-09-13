@@ -19,6 +19,11 @@ OUT press:   00 25 8d 40 -> 00 26 8d 48 -> 00 26 8d 40
 as 6. I included the OUT press to show the rest of the decode is fine,
 `st[1] & 0x07` going 5 -> 6.
 
+My unit came up with the flag already set, so `Front Panel Dim` read
+`on` with the LEDs lit and nothing dimmed. The flag only lights the
+indicator. Turning the level down is a separate set of writes, and
+nothing had made them.
+
 Two smaller things from chasing it:
 
 - `Front Panel Button` is the only panel control not passed to
