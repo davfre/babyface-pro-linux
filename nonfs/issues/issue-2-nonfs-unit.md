@@ -18,15 +18,15 @@ measurements either side of the change.
 ## Smaller things
 
 - **Card name hardcoded to FS.** Understandable, since you wrote it for the FS,
-  but it runs happily on the older Pro too, where every device picker then
-  names the wrong model. Taking it from `iProduct`, as `snd-usb-audio` does in
-  class compliant mode, would read correctly for both. Worth doing before the
-  driver reaches the kernel, if it does: `card->driver` is what alsa-lib config
-  and UCM profiles match on, so renaming it later would break people's configs.
-  On the same subject, the two models share `2a39:3fc0`. This unit reports
+  but it runs happily on the older Pro too, which then shows up everywhere as
+  `FS [Babyface Pro FS]`. Taking the name from `iProduct`, as `snd-usb-audio`
+  does in class compliant mode, would read correctly for both. Better done
+  before the driver reaches the kernel, if it does, since `card->driver` is
+  what alsa-lib config and UCM profiles match on.
+
+- **Telling the two models apart.** They share `2a39:3fc0`. This unit reports
   `iProduct` as `Babyface Pro (NNNNNNNN)` and `bcdDevice` as `0.01`. Do you
-  know what an FS reports? If either differs, the same string would double as a
-  way to tell them apart.
+  know what an FS reports? If either differs it would do the job.
 
 - **Unity on every load.** `babyface_write_default_mixer()` routes every source
   into every output at 0 dB each time the module loads, where the cold-init
