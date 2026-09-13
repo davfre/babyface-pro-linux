@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * RME Babyface Pro FS - proprietary-mode USB audio driver
+ * RME Babyface Pro - proprietary-mode USB audio driver
  *
  * Core driver: USB vendor requests + cold init, interrupt-URB PCM
  * streaming, mixer-state persistence across re-probes/resume, and
@@ -1182,9 +1182,9 @@ static int nurbs = BF_NURBS_DEFAULT;
 static int panel_poll_ms = BF_PANEL_POLL_MS_DEFAULT;
 
 module_param_array(index, int, NULL, 0444);
-MODULE_PARM_DESC(index, "Index value for the Babyface Pro FS sound card.");
+MODULE_PARM_DESC(index, "Index value for the Babyface Pro sound card.");
 module_param_array(id, charp, NULL, 0444);
-MODULE_PARM_DESC(id, "ID string for the Babyface Pro FS sound card.");
+MODULE_PARM_DESC(id, "ID string for the Babyface Pro sound card.");
 module_param(frames_per_urb, int, 0644);
 MODULE_PARM_DESC(frames_per_urb, "Audio frames per URB, 8..1024 (16 = low-latency floor, 256 = default).");
 module_param(nurbs, int, 0644);
@@ -1286,14 +1286,40 @@ static int babyface_probe(struct usb_interface *intf,
 	INIT_DELAYED_WORK(&chip->panel_work, babyface_panel_work);
 	chip->card->private_free = babyface_private_free;
 
-	strscpy(chip->card->driver, "BabyfaceProFS",
+	/* Model-neutral on purpose.  The FS and the original (2015)
+	 * Babyface Pro share VID:PID 2a39:3fc0, report the same bcdDevice
+	 * and the same iProduct shape, and neither says "FS" anywhere, so
+	 * there is nothing to tell them apart at probe time - and the
+	 * driver is reported to work unmodified on both.  card->driver in
+	 * particular is what alsa-lib configs and UCM profiles match on,
+	 * so it has to be right before this reaches a released kernel.
+	 */
+	strscpy(chip->card->driver, "BabyfacePro",
 		sizeof(chip->card->driver));
-	strscpy(chip->card->shortname, "Babyface Pro FS",
+	strscpy(chip->card->shortname, "Babyface Pro",
 		sizeof(chip->card->shortname));
 	snprintf(chip->card->longname, sizeof(chip->card->longname),
-		 "RME Babyface Pro FS (proprietary mode) at %s",
+		 "RME Babyface Pro (proprietary mode) at %s",
 		 dev_name(&dev->dev));
-	strscpy(chip->card->mixername, "Babyface Pro FS",
+
+	/* If the id was not passed as a module option, derive it from the
+	 * shortname with the whitespace removed, the way snd-usb-caiaq
+	 * does.  Letting the core derive it instead yields the last word
+	 * of the shortname ("Pro"), which is no use as an hw: name.
+	 */
+	if (*chip->card->id == '\0') {
+		char cid[sizeof(chip->card->id)];
+		const char *c;
+		size_t len;
+
+		memset(cid, 0, sizeof(cid));
+		for (c = chip->card->shortname, len = 0;
+		     *c && len < sizeof(cid) - 1; c++)
+			if (*c != ' ')
+				cid[len++] = *c;
+		snd_card_set_id(chip->card, cid);
+	}
+	strscpy(chip->card->mixername, "Babyface Pro",
 		sizeof(chip->card->mixername));
 
 	/* alt 1 = the default 48-kHz bandwidth class. */
@@ -1361,13 +1387,13 @@ static int babyface_probe(struct usb_interface *intf,
 			goto error;
 	}
 
-	err = snd_pcm_new(chip->card, "Babyface Pro FS", 0, 1, 1, &pcm);
+	err = snd_pcm_new(chip->card, "Babyface Pro", 0, 1, 1, &pcm);
 	if (err < 0) {
 		dev_err(&intf->dev, "snd_pcm_new failed: %d\n", err);
 		goto error;
 	}
 	pcm->private_data = chip;
-	strscpy(pcm->name, "Babyface Pro FS", sizeof(pcm->name));
+	strscpy(pcm->name, "Babyface Pro", sizeof(pcm->name));
 	snd_pcm_set_ops(pcm, SNDRV_PCM_STREAM_PLAYBACK, &babyface_pcm_ops);
 	snd_pcm_set_ops(pcm, SNDRV_PCM_STREAM_CAPTURE, &babyface_pcm_ops);
 
@@ -1433,7 +1459,7 @@ static int babyface_probe(struct usb_interface *intf,
 
 	usb_set_intfdata(intf, chip);
 	dev_info(&intf->dev,
-		 "Babyface Pro FS: card %i, %u frames/URB, %u URBs/direction\n",
+		 "Babyface Pro: card %i, %u frames/URB, %u URBs/direction\n",
 		 chip->card->number, chip->frames_per_urb, chip->nurbs);
 	return 0;
 
@@ -1573,5 +1599,5 @@ module_init(babyface_init);
 module_exit(babyface_exit);
 
 MODULE_AUTHOR("Ismaïl Bahloul <i.bahloul01@gmail.com>");
-MODULE_DESCRIPTION("RME Babyface Pro FS (proprietary mode) USB audio driver");
+MODULE_DESCRIPTION("RME Babyface Pro / Pro FS (proprietary mode) USB audio driver");
 MODULE_LICENSE("GPL");

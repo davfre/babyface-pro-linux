@@ -31,7 +31,7 @@ SINK = "alsa_output.usb-RME_Babyface_Pro__73055480__3A1697563035400-05.stereo-fa
 
 def card_num():
     for line in open("/proc/asound/cards"):
-        if "BabyfaceProFS" in line:
+        if "BabyfacePro" in line:
             return line.split()[0]
     raise SystemExit("no Babyface Pro FS card")
 

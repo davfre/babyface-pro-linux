@@ -139,37 +139,49 @@ u8 bf_master_8bit(u16 vol16)
 
 /* The cold-init register clear zeroes the mixer registers TotalMix
  * re-uploads afterwards.  The kernel driver has no saved scene (no
- * readback for faders), so it applies TotalMix's factory default:
- * every source routed to every output at unity, masters at 0 dB and
- * unmuted - the user/TuxMix can restore its own scene on top.
+ * readback for faders), so it applies TotalMix's factory routing -
+ * every source to every output at unity - so the card makes sound
+ * without any user-space mixer at all.
+ *
+ * The masters, however, come up at -20 dB rather than TotalMix's 0 dB.
+ * Routing all 14 sources into an output at unity means they SUM, and
+ * this runs on every fresh load, before alsa-restore has had a chance
+ * to put the user's own levels back.  On monitors or headphones with
+ * no volume control of their own that is a real hazard, and the
+ * failure is asymmetric: a default that is too quiet is turned up in a
+ * second, one that is too loud cannot be taken back.  -20 dB is still
+ * plainly audible, and it is not an invented number - it is the exact
+ * 8-bit/16-bit pair the hardware's own DIM button writes.
  */
 int babyface_write_default_mixer(struct snd_usb_babyface *chip)
 {
 	int out, src, ret;
 	u16 flag;
 
-	/* Output masters: 0 dB (0x2000) + the unmute companion (0xf3). */
+	/* Output masters: -20 dB, unmuted (see the comment above). */
 	for (out = 0; out < 6; out++) {
-		ret = bf_vendor_write(chip, BF_REQ_GAIN, BF_MASTER_UNMUTE,
+		ret = bf_vendor_write(chip, BF_REQ_GAIN, BF_MASTER_MINUS20_8,
 				      BF_REG_MASTER_8 + 2 * out);
 		if (ret < 0)
 			return ret;
-		ret = bf_vendor_write(chip, BF_REQ_GAIN, BF_MASTER_UNMUTE,
+		ret = bf_vendor_write(chip, BF_REQ_GAIN, BF_MASTER_MINUS20_8,
 				      BF_REG_MASTER_8 + 2 * out + 1);
 		if (ret < 0)
 			return ret;
 		flag = bf_flag_cycle[chip->flag_cnt];
 		chip->flag_cnt = (chip->flag_cnt + 1) & 3;
-		ret = bf_vendor_write(chip, BF_REQ_CROSSPOINT, BF_MASTER_0DB,
+		ret = bf_vendor_write(chip, BF_REQ_CROSSPOINT,
+				      BF_MASTER_MINUS20_16,
 				      (BF_REG_MASTER_16 + 2 * out) | flag);
 		if (ret < 0)
 			return ret;
-		ret = bf_vendor_write(chip, BF_REQ_CROSSPOINT, BF_MASTER_0DB,
+		ret = bf_vendor_write(chip, BF_REQ_CROSSPOINT,
+				      BF_MASTER_MINUS20_16,
 				      (BF_REG_MASTER_16 + 2 * out + 1) | flag);
 		if (ret < 0)
 			return ret;
-		chip->master[out][0] = BF_MASTER_0DB;
-		chip->master[out][1] = BF_MASTER_0DB;
+		chip->master[out][0] = BF_MASTER_MINUS20_16;
+		chip->master[out][1] = BF_MASTER_MINUS20_16;
 		chip->muted[out] = false;
 	}
 
@@ -1276,73 +1288,108 @@ static int bf_dim_get(struct snd_kcontrol *kctl,
 	return 0;
 }
 
-static int bf_dim_put(struct snd_kcontrol *kctl,
-		      struct snd_ctl_elem_value *ucontrol)
+/* Apply DIM on the wire.  chip->mutex must be held: this is reached both
+ * from the ALSA control and from the front-panel poll, and taking the
+ * lock here instead would self-deadlock one of the two.
+ */
+static int bf_dim_apply(struct snd_usb_babyface *chip, bool on)
 {
-	struct snd_usb_babyface *chip = snd_kcontrol_chip(kctl);
-	bool on = ucontrol->value.integer.value[0];
 	u16 flag;
-	int ret = 0;
+	int ret;
 
-	mutex_lock(&chip->mutex);
-	if (on == chip->dim)
-		goto out;
+	lockdep_assert_held(&chip->mutex);
 	if (on) {
 		chip->dim_saved[0] = chip->master[1][0];
 		chip->dim_saved[1] = chip->master[1][1];
-		ret = bf_vendor_write(chip, BF_REQ_GAIN, 0xcb,
+		ret = bf_vendor_write(chip, BF_REQ_GAIN, BF_MASTER_MINUS20_8,
 				      BF_REG_MASTER_8 + 2 * 1);
 		if (ret < 0)
-			goto out;
-		ret = bf_vendor_write(chip, BF_REQ_GAIN, 0xcb,
+			return ret;
+		ret = bf_vendor_write(chip, BF_REQ_GAIN, BF_MASTER_MINUS20_8,
 				      BF_REG_MASTER_8 + 2 * 1 + 1);
 		if (ret < 0)
-			goto out;
+			return ret;
 		flag = bf_flag_cycle[chip->flag_cnt];
 		chip->flag_cnt = (chip->flag_cnt + 1) & 3;
-		ret = bf_vendor_write(chip, BF_REQ_CROSSPOINT, 0x0333,
+		ret = bf_vendor_write(chip, BF_REQ_CROSSPOINT,
+				      BF_MASTER_MINUS20_16,
 				      (BF_REG_MASTER_16 + 2 * 1) | flag);
 		if (ret < 0)
-			goto out;
-		ret = bf_vendor_write(chip, BF_REQ_CROSSPOINT, 0x0333,
+			return ret;
+		ret = bf_vendor_write(chip, BF_REQ_CROSSPOINT,
+				      BF_MASTER_MINUS20_16,
 				      (BF_REG_MASTER_16 + 2 * 1 + 1) | flag);
 		if (ret < 0)
-			goto out;
+			return ret;
 		ret = bf_vendor_write(chip, BF_REQ_PREAMP, 0x2000, 0x2000);
 		if (ret < 0)
-			goto out;
+			return ret;
 	} else {
 		ret = bf_vendor_write(chip, BF_REQ_GAIN,
 				      bf_master_8bit(chip->dim_saved[0]),
 				      BF_REG_MASTER_8 + 2 * 1);
 		if (ret < 0)
-			goto out;
+			return ret;
 		ret = bf_vendor_write(chip, BF_REQ_GAIN,
 				      bf_master_8bit(chip->dim_saved[1]),
 				      BF_REG_MASTER_8 + 2 * 1 + 1);
 		if (ret < 0)
-			goto out;
+			return ret;
 		flag = bf_flag_cycle[chip->flag_cnt];
 		chip->flag_cnt = (chip->flag_cnt + 1) & 3;
 		ret = bf_vendor_write(chip, BF_REQ_CROSSPOINT,
 				      chip->dim_saved[0],
 				      (BF_REG_MASTER_16 + 2 * 1) | flag);
 		if (ret < 0)
-			goto out;
+			return ret;
 		ret = bf_vendor_write(chip, BF_REQ_CROSSPOINT,
 				      chip->dim_saved[1],
 				      (BF_REG_MASTER_16 + 2 * 1 + 1) | flag);
 		if (ret < 0)
-			goto out;
+			return ret;
 		ret = bf_vendor_write(chip, BF_REQ_PREAMP, 0x0000, 0x2000);
 		if (ret < 0)
-			goto out;
+			return ret;
 	}
 	chip->dim = on;
-	ret = 1;
+	return 0;
+}
+
+static int bf_dim_put(struct snd_kcontrol *kctl,
+		      struct snd_ctl_elem_value *ucontrol)
+{
+	struct snd_usb_babyface *chip = snd_kcontrol_chip(kctl);
+	bool on = ucontrol->value.integer.value[0];
+	int ret = 0;
+
+	mutex_lock(&chip->mutex);
+	if (on == chip->dim)
+		goto out;
+	ret = bf_dim_apply(chip, on);
+	if (ret == 0)
+		ret = 1;
 out:
 	mutex_unlock(&chip->mutex);
 	return ret;
+}
+
+/* DIM press on the front panel.  The device has no DSP of its own for
+ * this, so the host does it, exactly as it already does for the SET
+ * button's phantom toggle.
+ */
+void bf_panel_toggle_dim(struct snd_usb_babyface *chip)
+{
+	bool on;
+	int ret;
+
+	mutex_lock(&chip->mutex);
+	on = !chip->dim;
+	ret = bf_dim_apply(chip, on);
+	mutex_unlock(&chip->mutex);
+
+	if (ret == 0 && chip->dim_kctl)
+		snd_ctl_notify(chip->card, SNDRV_CTL_EVENT_MASK_VALUE,
+			       &chip->dim_kctl->id);
 }
 
 static int bf_width_info(struct snd_kcontrol *kctl,
@@ -1553,6 +1600,7 @@ int babyface_create_flags(struct snd_usb_babyface *chip)
 		.get = bf_dim_get,
 		.put = bf_dim_put,
 	}, chip);
+	chip->dim_kctl = kctl;
 	err = snd_ctl_add(chip->card, kctl);
 	if (err < 0)
 		return err;
@@ -2476,6 +2524,14 @@ static void bf_panel_tick(struct snd_usb_babyface *chip)
 	if (st[3] == BF_PANEL_FLASH_SET &&
 	    chip->panel_prev[3] != BF_PANEL_FLASH_SET)
 		bf_panel_set_phantom(chip);
+
+	/* DIM press: toggle the host-side dim, same host-in-the-loop
+	 * arrangement as SET above.  Decoding the press without acting on
+	 * it made the button look dead with the driver alone.
+	 */
+	if (st[3] == BF_PANEL_FLASH_DIM &&
+	    chip->panel_prev[3] != BF_PANEL_FLASH_DIM)
+		bf_panel_toggle_dim(chip);
 
 	/* MIX (fader mode) - HOST-latched, like TotalMix (cap_mix.pcap,
 	 * cap_select2.pcap): the raw press readback is `0D 0D 41 44` -

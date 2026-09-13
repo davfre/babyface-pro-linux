@@ -37,9 +37,9 @@ while [ $# -gt 0 ]; do
 done
 [ -n "$RATES" ] || RATES=$EXTRA
 
-CARD=$(awk '/BabyfaceProFS/{print $1}' /proc/asound/cards | head -1)
-[ -n "$CARD" ] || { echo "FATAL: Babyface Pro FS card not found"; exit 1; }
-echo "== card $CARD: Babyface Pro FS =="
+CARD=$(awk '/BabyfacePro/{print $1}' /proc/asound/cards | head -1)
+[ -n "$CARD" ] || { echo "FATAL: Babyface Pro card not found"; exit 1; }
+echo "== card $CARD: Babyface Pro =="
 
 FPU=$(cat /sys/module/snd_usb_babyface_pro/parameters/frames_per_urb 2>/dev/null)
 NURBS=$(cat /sys/module/snd_usb_babyface_pro/parameters/nurbs 2>/dev/null)

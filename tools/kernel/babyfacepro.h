@@ -224,6 +224,11 @@
 #define BF_MASTER_8_MIN			0x73
 #define BF_MASTER_MUTE			0x3b
 #define BF_MASTER_UNMUTE		0xf3
+/* -20 dB master, 8-bit and 16-bit: the exact pair the hardware DIM
+ * button writes (cap_dim2.pcap), reused as the power-on default.
+ */
+#define BF_MASTER_MINUS20_8		0xcb
+#define BF_MASTER_MINUS20_16		0x0333
 
 /* The front-panel gain/display family (0x1A, wIdx 0x000A + mic 0-3;
  * cap_panel/cap_mix.pcap): in gain mode the wheel writes the "ADC
@@ -386,6 +391,7 @@ struct snd_usb_babyface {
 					 */
 	struct snd_kcontrol *panel_kctl[7]; /* for snd_ctl_notify */
 	struct snd_kcontrol *trim_kctl[4];  /* for snd_ctl_notify */
+	struct snd_kcontrol *dim_kctl;      /* for snd_ctl_notify */
 };
 
 struct bf_saved {
@@ -454,6 +460,7 @@ int bf_loopback_write_map(struct snd_usb_babyface *chip, int out, bool on);
 int bf_phase_apply(struct snd_usb_babyface *chip, int mic, bool invert);
 int bf_split_apply(struct snd_usb_babyface *chip, int pb, bool split);
 int bf_trim_apply(struct snd_usb_babyface *chip, int mic, int trim_db2);
+void bf_panel_toggle_dim(struct snd_usb_babyface *chip);
 int bf_preamp_state_write(struct snd_usb_babyface *chip);
 int babyface_create_controls(struct snd_usb_babyface *chip);
 int babyface_create_xpoints(struct snd_usb_babyface *chip);
