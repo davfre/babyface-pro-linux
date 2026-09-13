@@ -1,4 +1,4 @@
-# Maintainer: iswad-lab <iswad@lab.dev>
+# Maintainer: Ismaïl Bahloul <i.bahloul01@gmail.com>
 
 # snd-usb-babyface-pro (DKMS) — Linux driver for the RME Babyface Pro FS,
 # proprietary USB mode (VID:PID 2a39:3fc0).
@@ -6,6 +6,12 @@
 # DKMS rebuilds the module automatically on every kernel upgrade; you
 # still need the matching *-headers package installed for your kernel
 # (linux-headers, linux-lts-headers, linux-cachyos-headers, ...).
+#
+# NOT PUBLISHABLE AS-IS: the source URL below resolves only once a
+# matching git tag exists upstream (there is none yet - `git tag v0.1.0`
+# and push it first). sha256sums is a SKIP placeholder for the same
+# reason; replace it with the real checksum of the tagged tarball, since
+# the AUR guidelines want release tarballs verified.
 #
 # When a new version is tagged on GitHub, update pkgver and the source
 # tarball checksum below.
