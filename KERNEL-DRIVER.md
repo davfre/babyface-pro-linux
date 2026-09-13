@@ -421,6 +421,30 @@ first-impulse method.)  Full sweep `tools/kernel/latency-sweep.sh`:
     reset).  Deliberately a **post-merge follow-up**, not an RFC
     blocker — it touches the streaming core right before submission.
 
+## Power-on defaults and card naming (decided 2026-09-13)
+
+- **Masters come up at -20 dB**, not at TotalMix's 0 dB. The routing
+  default is unchanged (every source into every output at unity), so
+  the card still makes sound with no user-space mixer at all - but
+  those 14 sources SUM, and the default is re-applied on every fresh
+  module load, before udev's `alsactl restore` can put the user's own
+  levels back. Raised by David Fredman in issue #4. The value is the
+  exact 8-bit/16-bit pair (`0xcb` / `0x0333`) that the hardware's own
+  DIM button writes, captured in `cap_dim2.pcap`, so it is measured
+  rather than chosen. **Consequence**: DIM applies an *absolute*
+  -20 dB, so with the new default it does nothing audible until a
+  master is raised above -20 dB. That is how the hardware has always
+  behaved; it is simply now visible from the first second.
+- **Card naming is model-neutral**: `card->driver` = `BabyfacePro`,
+  shortname `Babyface Pro`, id `BabyfacePro`. The FS and the 2015
+  non-FS share VID:PID, bcdDevice and iProduct shape - the FS's own
+  `iProduct` is "Babyface Pro (73055480)", with no "FS" in it - so
+  there is nothing to branch on at probe. `card->driver` is what
+  alsa-lib and UCM match on and is effectively frozen by a kernel
+  merge. The id is derived caiaq-style from the shortname rather than
+  left to the core, which gave the last word only (`hw:FS`, then
+  `hw:Pro`).
+
 ## Re-probe resilience: the usbfs claim (2026-08-24, diagnosed)
 
 **LOCKED OUT 2026-08-26 (`80c5fff`)**: `BabyfaceUsb::open()` (tuxmix-usb)

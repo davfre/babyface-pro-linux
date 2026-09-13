@@ -210,19 +210,37 @@ regardless of whether a review arrives:
   apart from the descriptors: the FS here reports `bcdDevice` 0.01 and
   `iProduct` "Babyface Pro (73055480)" - no "FS" anywhere - which is
   also what the non-FS reports.
-- **Open design questions raised by that report**, none of them fixed
-  here because they are judgement calls, not defects:
-  - `card->driver` is hardcoded to `"BabyfaceProFS"`, and that string
-    is what alsa-lib config and UCM profiles match on. Easy to change
-    now, impossible after a kernel merge.
-  - `babyface_write_default_mixer()` routes all 14 sources into every
-    output at 0 dB with masters at 0 dB on every fresh load. That
-    sums. On monitors with no volume control of their own it is a
-    real hazard at first plug-in, before alsa-restore runs.
-  - All four gains are named `Mic 1 Capture Volume` (index 0-3),
-    though index 2 and 3 are Hi-Z instrument inputs running 0-9 dB.
-    Same for `Pad Mic 1`. Naming them per input, as the crosspoints
-    already do with AN1/AN2, would read better.
+- **Three design questions from that report, settled 2026-09-13**
+  (all three get harder to change once this is in a released kernel):
+  - **Card naming is model-neutral.** `card->driver` is `BabyfacePro`,
+    shortname `Babyface Pro`, and the card id is derived from the
+    shortname with whitespace stripped (caiaq's idiom) rather than
+    left to the core, which produced `hw:FS` before and `hw:Pro`
+    after the rename. It is `hw:BabyfacePro` now. This matters most
+    for `card->driver`, which alsa-lib configs and UCM profiles match
+    on.
+  - **Power-on masters are -20 dB, not 0 dB.** The default routing
+    sums all 14 sources into every output at unity, on every fresh
+    load, before alsa-restore can restore the user's levels. The
+    failure is asymmetric - too quiet is fixed in a second, too loud
+    cannot be taken back. -20 dB is the exact register pair the
+    hardware's own DIM writes, so it is a measured value rather than
+    an invented one. Consequence worth knowing: DIM is an *absolute*
+    -20 dB, so it is inaudible until a master is raised above that.
+  - **The front-panel DIM button acts now.** It was decoded and then
+    ignored, so the button looked dead with the driver alone while the
+    README claimed full panel emulation. SET already toggles phantom
+    from the same poll. The write path is factored into
+    `bf_dim_apply()`, which asserts the mutex rather than taking it,
+    since it is now reached from both the control and the panel work -
+    the exact shape that self-deadlocked this driver once before.
+- **Still open from that report**: all four gains are named
+  `Mic 1 Capture Volume` (index 0-3) though index 2 and 3 are Hi-Z
+  instrument inputs running 0-9 dB, and both PADs are `Pad Mic 1`.
+  Renaming them per input, as the crosspoints already do with
+  AN1/AN2, is an ALSA-control-name change that would break anything
+  matching the current names, so it wants deciding in one go with any
+  other naming change rather than piecemeal.
 - **5 new controls** (2026-09-06, `c72cfaf` + `77dcf1a`): Sample Clock
   Source, Instrument Ref Level, Phase Switch, Stereo Split Switch,
   Input Trim. None of these have ever been posted for review.
