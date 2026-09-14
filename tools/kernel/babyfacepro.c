@@ -224,7 +224,6 @@ static DEFINE_MUTEX(bf_saved_mutex);
 int babyface_restore_state(struct snd_usb_babyface *chip)
 {
 	int out, src, mic, ret;
-	u16 flag;
 
 	/* Preamp state + commit. */
 	ret = bf_preamp_state_write(chip);
@@ -245,25 +244,16 @@ int babyface_restore_state(struct snd_usb_babyface *chip)
 	if (ret < 0)
 		return ret;
 
-	/* Crosspoints (canonical out -> register block). */
+	/* Crosspoints (canonical out -> register block; AN1/2 also needs
+	 * the low map, see bf_xpoint_write's own comment).
+	 */
 	for (out = 0; out < 6; out++) {
 		unsigned int blk = bf_xpoint_block[out];
 
 		for (src = 0; src < 14; src++) {
-			flag = bf_flag_cycle[chip->flag_cnt];
-			chip->flag_cnt = (chip->flag_cnt + 1) & 3;
-			ret = bf_vendor_write(chip, BF_REQ_CROSSPOINT,
+			ret = bf_xpoint_write(chip, out, src,
 					      chip->xpoint[out][src][0],
-					      (BF_REG_CROSS_BASE_L +
-					       BF_REG_CROSS_STRIDE * blk +
-					       bf_sources[src].idx_l) | flag);
-			if (ret < 0)
-				return ret;
-			ret = bf_vendor_write(chip, BF_REQ_CROSSPOINT,
-					      chip->xpoint[out][src][1],
-					      (BF_REG_CROSS_BASE_R +
-					       BF_REG_CROSS_STRIDE * blk +
-					       bf_sources[src].idx_r) | flag);
+					      chip->xpoint[out][src][1]);
 			if (ret < 0)
 				return ret;
 		}

@@ -186,8 +186,9 @@ int babyface_write_default_mixer(struct snd_usb_babyface *chip)
 	}
 
 	/* Every source into every output pair, L and R, at 0 dB (the
-	 * standard map; the low map is only a shadow).  The addresses use
-	 * the source's idx_l/idx_r on the canonical block - writing the raw
+	 * standard map, plus the low map on AN1/2 - see bf_xpoint_write's
+	 * own comment for why AN1/2 needs both).  The addresses use the
+	 * source's idx_l/idx_r on the canonical block - writing the raw
 	 * index on both bases would put PB1 R on the L side and PB1 L on
 	 * the R side (L+R on both = mono).  The "cross" registers
 	 * (L-reg idx_r / R-reg idx_l) are left at 0; the restore at stream
@@ -197,18 +198,8 @@ int babyface_write_default_mixer(struct snd_usb_babyface *chip)
 		unsigned int blk = bf_xpoint_block[out];
 
 		for (src = 0; src < 14; src++) {
-			flag = bf_flag_cycle[chip->flag_cnt];
-			chip->flag_cnt = (chip->flag_cnt + 1) & 3;
-			ret = bf_vendor_write(chip, BF_REQ_CROSSPOINT, BF_FADER_0DB,
-					      (BF_REG_CROSS_BASE_L +
-					       BF_REG_CROSS_STRIDE * blk +
-					       bf_sources[src].idx_l) | flag);
-			if (ret < 0)
-				return ret;
-			ret = bf_vendor_write(chip, BF_REQ_CROSSPOINT, BF_FADER_0DB,
-					      (BF_REG_CROSS_BASE_R +
-					       BF_REG_CROSS_STRIDE * blk +
-					       bf_sources[src].idx_r) | flag);
+			ret = bf_xpoint_write(chip, out, src, BF_FADER_0DB,
+					      BF_FADER_0DB);
 			if (ret < 0)
 				return ret;
 		}
@@ -477,6 +468,58 @@ int bf_preamp_state_write(struct snd_usb_babyface *chip)
  */
 static const DECLARE_TLV_DB_LINEAR(bf_xpoint_tlv, TLV_DB_GAIN_MUTE, 600);
 
+/* Write a crosspoint slot on the wire: the standard map always, and -
+ * for the AN1/2 output only - the low map as well.
+ *
+ * HARDWARE-VERIFIED 2026-09-14: AN1/2 is not just another output with
+ * a redundant "shadow" register, despite what this file used to say.
+ * Sweeping only the standard map (BF_REG_CROSS_BASE_*) into AN1/2
+ * produced no audible change at all, off through +6 dB, with two
+ * independent sources (a generated tone via PB1, a live mic via AN2);
+ * the exact same code path targeting any other output (verified on
+ * PH3/4) tracked the fader correctly, off to +6 dB within 0.6 dB.
+ * PROTOCOL.md's "Scene load" capture explains why: the vendor software
+ * always writes BOTH the standard map and the low map
+ * (BF_REG_LOWMAP_BASE_*) together for AN1/2's own crosspoints, at the
+ * same value - the low map is what actually feeds that output's sum;
+ * the standard map alone is not enough. Every other output only has a
+ * standard map.
+ *
+ * bf_split_apply() already knew this (it writes both for AN1/2's
+ * playback pairs); this generalises the same pattern to the plain
+ * fader.
+ */
+int bf_xpoint_write(struct snd_usb_babyface *chip, int out, int src,
+		    u16 l, u16 r)
+{
+	unsigned int blk = bf_xpoint_block[out];
+	const struct bf_source *s = &bf_sources[src];
+	u16 flag;
+	int ret;
+
+	if (out == 0) {
+		ret = bf_vendor_write(chip, BF_REQ_CROSSPOINT, l,
+				      BF_REG_LOWMAP_BASE_L + s->idx_l);
+		if (ret < 0)
+			return ret;
+		ret = bf_vendor_write(chip, BF_REQ_CROSSPOINT, r,
+				      BF_REG_LOWMAP_BASE_R + s->idx_r);
+		if (ret < 0)
+			return ret;
+	}
+
+	flag = bf_flag_cycle[chip->flag_cnt];
+	chip->flag_cnt = (chip->flag_cnt + 1) & 3;
+	ret = bf_vendor_write(chip, BF_REQ_CROSSPOINT, l,
+			      (BF_REG_CROSS_BASE_L + BF_REG_CROSS_STRIDE * blk +
+			       s->idx_l) | flag);
+	if (ret < 0)
+		return ret;
+	return bf_vendor_write(chip, BF_REQ_CROSSPOINT, r,
+			       (BF_REG_CROSS_BASE_R + BF_REG_CROSS_STRIDE * blk +
+				s->idx_r) | flag);
+}
+
 static int bf_xpoint_info(struct snd_kcontrol *kctl,
 			  struct snd_ctl_elem_info *uinfo)
 {
@@ -506,11 +549,8 @@ static int bf_xpoint_put(struct snd_kcontrol *kctl,
 	struct snd_usb_babyface *chip = snd_kcontrol_chip(kctl);
 	int out = kctl->private_value >> 8;
 	int src = kctl->private_value & 0xff;
-	unsigned int blk = bf_xpoint_block[out];
-	const struct bf_source *s = &bf_sources[src];
 	u16 l = ucontrol->value.integer.value[0];
 	u16 r = ucontrol->value.integer.value[1];
-	u16 flag;
 	int ret = 0;
 
 	if (l > BF_FADER_TOP || r > BF_FADER_TOP)
@@ -520,20 +560,7 @@ static int bf_xpoint_put(struct snd_kcontrol *kctl,
 	if (l == chip->xpoint[out][src][0] && r == chip->xpoint[out][src][1])
 		goto out;
 
-	flag = bf_flag_cycle[chip->flag_cnt];
-	chip->flag_cnt = (chip->flag_cnt + 1) & 3;
-
-	/* L register = 0x0034 + 0x34*blk + idx, R = 0x004E + 0x34*blk + idx
-	 * (mono sources use the same idx on both sides).
-	 */
-	ret = bf_vendor_write(chip, BF_REQ_CROSSPOINT, l,
-			      (BF_REG_CROSS_BASE_L + BF_REG_CROSS_STRIDE * blk +
-			       s->idx_l) | flag);
-	if (ret < 0)
-		goto out;
-	ret = bf_vendor_write(chip, BF_REQ_CROSSPOINT, r,
-			      (BF_REG_CROSS_BASE_R + BF_REG_CROSS_STRIDE * blk +
-			       s->idx_r) | flag);
+	ret = bf_xpoint_write(chip, out, src, l, r);
 	if (ret < 0)
 		goto out;
 

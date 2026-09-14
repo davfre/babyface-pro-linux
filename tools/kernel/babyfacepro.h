@@ -114,10 +114,15 @@
 #define BF_REG_CROSS_STRIDE		0x0034
 /* Low map (the AN1/2 monitor bus's own per-source registers, one set
  * shared across every output - not one per output block like the
- * standard crosspoint map above). Used ad-hoc today by bf_ms_put/
- * width's own hardcoded addresses; named here for stereo split, which
- * needs the general form. PROTOCOL.md / tuxmix-usb's `map::low_map_l`/
- * `low_map_r` (hardware-verified) use the identical BASE + idx shape.
+ * standard crosspoint map above). NOT a shadow/mirror of the standard
+ * map for AN1/2: it is what that output actually sums from, and the
+ * standard map alone has no audible effect on it (hardware-verified
+ * 2026-09-14, see bf_xpoint_write's own comment and KERNEL-DRIVER.md).
+ * Used by bf_ms_put/width's own hardcoded addresses, by bf_split_apply/
+ * bf_phase_apply/bf_trim_apply for their own AN1/2-only features, and
+ * by bf_xpoint_write for the general crosspoint fader.  PROTOCOL.md /
+ * tuxmix-usb's `map::low_map_l`/`low_map_r` (hardware-verified) use
+ * the identical BASE + idx shape.
  */
 #define BF_REG_LOWMAP_BASE_L		0x0000	/* + idx_l */
 #define BF_REG_LOWMAP_BASE_R		0x001a	/* + idx_r */
@@ -457,6 +462,8 @@ void babyface_stream_work(struct work_struct *work);
 int babyface_write_default_mixer(struct snd_usb_babyface *chip);
 int bf_apply_masters(struct snd_usb_babyface *chip);
 int bf_loopback_write_map(struct snd_usb_babyface *chip, int out, bool on);
+int bf_xpoint_write(struct snd_usb_babyface *chip, int out, int src,
+		    u16 l, u16 r);
 int bf_phase_apply(struct snd_usb_babyface *chip, int mic, bool invert);
 int bf_split_apply(struct snd_usb_babyface *chip, int pb, bool split);
 int bf_trim_apply(struct snd_usb_babyface *chip, int mic, int trim_db2);
