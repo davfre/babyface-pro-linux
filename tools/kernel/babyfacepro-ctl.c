@@ -143,45 +143,61 @@ u8 bf_master_8bit(u16 vol16)
  * every source to every output at unity - so the card makes sound
  * without any user-space mixer at all.
  *
- * The masters, however, come up at -20 dB rather than TotalMix's 0 dB.
- * Routing all 14 sources into an output at unity means they SUM, and
- * this runs on every fresh load, before alsa-restore has had a chance
- * to put the user's own levels back.  On monitors or headphones with
- * no volume control of their own that is a real hazard, and the
- * failure is asymmetric: a default that is too quiet is turned up in a
- * second, one that is too loud cannot be taken back.  -20 dB is still
- * plainly audible, and it is not an invented number - it is the exact
+ * The two analog masters (AN1/2, the main out; PH3/4, the headphone
+ * out) come up at -20 dB rather than TotalMix's 0 dB.  Routing all 14
+ * sources into an output at unity means they SUM, and this runs on
+ * every fresh load, before alsa-restore has had a chance to put the
+ * user's own levels back.  On monitors or headphones with no volume
+ * control of their own that is a real hazard, and the failure is
+ * asymmetric: a default that is too quiet is turned up in a second,
+ * one that is too loud cannot be taken back.  -20 dB is still plainly
+ * audible, and it is not an invented number - it is the exact
  * 8-bit/16-bit pair the hardware's own DIM button writes.
+ *
+ * The other four outputs (AS1/2, ADAT3/4, ADAT5/6, ADAT7/8) are all
+ * digital, carried over the single optical port - nothing downstream
+ * of them can be damaged by a loud signal the way a speaker or a pair
+ * of headphones can, so there is no hazard to mitigate, only a
+ * digital feed that would otherwise arrive 20 dB quiet for no reason
+ * a downstream device could infer.  They keep TotalMix's own 0 dB
+ * default (raised 2026-09-15 after David Fredman pointed out the
+ * blanket -20 dB reached them too, on his report of the AN1/2/PH3/4
+ * default - issue #4).
  */
 int babyface_write_default_mixer(struct snd_usb_babyface *chip)
 {
 	int out, src, ret;
 	u16 flag;
 
-	/* Output masters: -20 dB, unmuted (see the comment above). */
+	/* Output masters: the two analog outputs at -20 dB, the four
+	 * digital ones at 0 dB (see the comment above).  Unmuted either
+	 * way.
+	 */
 	for (out = 0; out < 6; out++) {
-		ret = bf_vendor_write(chip, BF_REQ_GAIN, BF_MASTER_MINUS20_8,
+		bool analog = out < 2;
+		u8 gain8 = analog ? BF_MASTER_MINUS20_8 : BF_MASTER_UNMUTE;
+		u16 gain16 = analog ? BF_MASTER_MINUS20_16 : BF_MASTER_0DB;
+
+		ret = bf_vendor_write(chip, BF_REQ_GAIN, gain8,
 				      BF_REG_MASTER_8 + 2 * out);
 		if (ret < 0)
 			return ret;
-		ret = bf_vendor_write(chip, BF_REQ_GAIN, BF_MASTER_MINUS20_8,
+		ret = bf_vendor_write(chip, BF_REQ_GAIN, gain8,
 				      BF_REG_MASTER_8 + 2 * out + 1);
 		if (ret < 0)
 			return ret;
 		flag = bf_flag_cycle[chip->flag_cnt];
 		chip->flag_cnt = (chip->flag_cnt + 1) & 3;
-		ret = bf_vendor_write(chip, BF_REQ_CROSSPOINT,
-				      BF_MASTER_MINUS20_16,
+		ret = bf_vendor_write(chip, BF_REQ_CROSSPOINT, gain16,
 				      (BF_REG_MASTER_16 + 2 * out) | flag);
 		if (ret < 0)
 			return ret;
-		ret = bf_vendor_write(chip, BF_REQ_CROSSPOINT,
-				      BF_MASTER_MINUS20_16,
+		ret = bf_vendor_write(chip, BF_REQ_CROSSPOINT, gain16,
 				      (BF_REG_MASTER_16 + 2 * out + 1) | flag);
 		if (ret < 0)
 			return ret;
-		chip->master[out][0] = BF_MASTER_MINUS20_16;
-		chip->master[out][1] = BF_MASTER_MINUS20_16;
+		chip->master[out][0] = gain16;
+		chip->master[out][1] = gain16;
 		chip->muted[out] = false;
 	}
 
