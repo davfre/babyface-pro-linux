@@ -1,6 +1,6 @@
-From 173af2e53fb7617267bc1cc6da13ccafcd721db3 Mon Sep 17 00:00:00 2001
+From 702db0b12576cf5e58c3a7335849278c378be8ff Mon Sep 17 00:00:00 2001
 From: =?UTF-8?q?Isma=C3=AFl=20Bahloul?= <i.bahloul01@gmail.com>
-Date: Mon, 14 Sep 2026 08:12:06 +0100
+Date: Mon, 14 Sep 2026 12:50:07 +0100
 Subject: [RFC PATCH v4 0/3] ALSA: usb: add RME Babyface Pro driver (proprietary mode)
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
@@ -34,7 +34,8 @@ Changes since v3:
    audible level.
 
  - Two real bugs found, diagnosed and fixed by David Fredman, who also
-   became this driver's second tester:
+   became this driver's second tester, on an original (2015, non-FS)
+   Babyface Pro:
 
    * The stream URBs were submitted without URB_NO_TRANSFER_DMA_MAP
      even though their buffers come from usb_alloc_coherent(), so the
@@ -56,6 +57,19 @@ Changes since v3:
      before and after: 0.808 dB per dB of control, against 1.000 after
      the fix.
 
+ - The power-on masters no longer come up at unity, and the -20 dB
+   safety default is scoped to the two analog outputs only.  The
+   routing default sends all 14 sources into every output at unity,
+   and they sum, on every fresh module load before alsa-restore can
+   restore the user's levels; AN1/2 and PH3/4 now come up at -20 dB,
+   the level the hardware's own DIM button writes.  The four digital
+   outputs (AS1/2, ADAT3/4, ADAT5/6, ADAT7/8) keep the vendor
+   software's own 0 dB default instead, since nothing downstream of a
+   digital feed can be damaged by a loud signal the way a speaker or a
+   pair of headphones can - David Fredman flagged that the original
+   six-output default reached those too, for no reason a receiving
+   digital device could infer.
+
  - The driver is no longer FS-specific.  It runs unmodified on an
    original (2015) Babyface Pro; the two models share VID:PID,
    bcdDevice and iProduct shape, and nothing in the descriptors tells
@@ -64,14 +78,11 @@ Changes since v3:
    getting right before the strings are frozen by a release, since
    card->driver is what alsa-lib configs and UCM profiles match on.
 
- - The power-on mixer no longer comes up at unity.  The default routes
-   all 14 sources into every output, and they sum, on every fresh
-   module load before alsa-restore can restore the user's levels.  The
-   masters now come up at -20 dB, which is the level the hardware's own
-   DIM button writes.
-
  - The front-panel DIM button acts now instead of only being decoded.
-   SET already toggled phantom from the same poll.
+   SET already toggled phantom from the same poll.  Its scope (Phones
+   only) matches the one vendor capture we have of it; whether that is
+   the only possible target or just the default "Main Out" assignment
+   is an open protocol question, noted rather than guessed at.
 
  - Added dB TLV information to the preamp gain, trim and crosspoint
    controls; only the output masters had any before.  Hardware-
@@ -102,9 +113,10 @@ Known limitations, stated up front:
 
  - A few protocol details are not fully pinned down and are documented
    as open: the preamp readback index semantics, a width
-   strip-ownership edge case, and the exact high-frequency warping of
-   the EQ coefficients against the vendor curve.  None of them affect
-   the shipped controls.
+   strip-ownership edge case, whether DIM's scope is reassignable with
+   TotalMix's Main Out setting, and the exact high-frequency warping
+   of the EQ coefficients against the vendor curve.  None of them
+   affect the shipped controls.
 
  - The latency profile is chosen at load time through the
    frames_per_urb and nurbs module parameters; changing it means a
@@ -138,10 +150,10 @@ Ismaïl Bahloul (3):
  sound/usb/Kconfig                       |   20 +
  sound/usb/Makefile                      |    2 +-
  sound/usb/babyfacepro/Makefile          |    4 +
- sound/usb/babyfacepro/babyfacepro-ctl.c | 3480 +++++++++++++++++++++++
+ sound/usb/babyfacepro/babyfacepro-ctl.c | 3494 +++++++++++++++++++++++
  sound/usb/babyfacepro/babyfacepro.c     | 1593 +++++++++++
  sound/usb/babyfacepro/babyfacepro.h     |  494 ++++
- 7 files changed, 5598 insertions(+), 1 deletion(-)
+ 7 files changed, 5612 insertions(+), 1 deletion(-)
  create mode 100644 sound/usb/babyfacepro/Makefile
  create mode 100644 sound/usb/babyfacepro/babyfacepro-ctl.c
  create mode 100644 sound/usb/babyfacepro/babyfacepro.c

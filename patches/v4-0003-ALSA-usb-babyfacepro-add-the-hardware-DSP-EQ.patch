@@ -1,4 +1,4 @@
-From 173af2e53fb7617267bc1cc6da13ccafcd721db3 Mon Sep 17 00:00:00 2001
+From 702db0b12576cf5e58c3a7335849278c378be8ff Mon Sep 17 00:00:00 2001
 From: =?UTF-8?q?Isma=C3=AFl=20Bahloul?= <i.bahloul01@gmail.com>
 Date: Mon, 14 Sep 2026 08:11:38 +0100
 Subject: [RFC PATCH v4 3/3] ALSA: usb: babyfacepro: add the hardware DSP EQ
@@ -30,10 +30,10 @@ Signed-off-by: Ismaïl Bahloul <i.bahloul01@gmail.com>
  3 files changed, 609 insertions(+)
 
 diff --git a/sound/usb/babyfacepro/babyfacepro-ctl.c b/sound/usb/babyfacepro/babyfacepro-ctl.c
-index cc9d13be0..73badbb2d 100644
+index 2b05e9e99..d87672648 100644
 --- a/sound/usb/babyfacepro/babyfacepro-ctl.c
 +++ b/sound/usb/babyfacepro/babyfacepro-ctl.c
-@@ -2903,3 +2903,578 @@ int babyface_create_panel(struct snd_usb_babyface *chip)
+@@ -2917,3 +2917,578 @@ int babyface_create_panel(struct snd_usb_babyface *chip)
  
  	return 0;
  }
