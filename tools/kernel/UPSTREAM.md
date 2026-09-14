@@ -173,6 +173,40 @@ it as the record of what was actually mailed on 2026-09-02.
    linux-sound@vger.kernel.org, linux-kernel@vger.kernel.org. Re-run
    before actually mailing — MAINTAINERS entries can change.
 
+## v4 - SENT 2026-09-14
+
+Mailed via `git send-email` to linux-sound@vger.kernel.org, Cc
+linux-usb@vger.kernel.org, alsa-devel@alsa-project.org, Jaroslav
+Kysela, Takashi Iwai, linux-kernel@vger.kernel.org. All 4 messages
+(cover letter + 3 patches) accepted by Gmail's SMTP server
+(`Result: 250` on each). `git send-email` auto-CC'd David Fredman on
+patch 1 specifically, detected from his `Co-developed-by:`/
+`Signed-off-by:` trailers in that patch's body.
+
+Pre-send checklist, all confirmed on the generated patch files (not
+just the sources) immediately before sending:
+- Every point from Takashi's v2 review that required a code change is
+  present in v4 (Reported-by/Closes removed, stream-model big-picture
+  section, SPDX in the Makefile, ASCII-only comments, `BF_CTL_TIMEOUT`,
+  `BF_CROSS_L/R_FIRST/LAST`, `bf_vendor_write_cycle()`, S32_LE with
+  msbits, the playback-clamp comment rewritten). The one non-code point
+  (the alsactl-restore design question) was already answered by email
+  in the v3 round and didn't need repeating.
+- checkpatch --strict: 0 errors on all 3 patches, only the 2 known
+  `ang` false positives on patch 3.
+- `get_maintainer.pl`, re-run fresh: Jaroslav, Takashi, David (via his
+  trailers), the sound lists — no stray recipients.
+- Zero `FILL-IN-BEFORE-SENDING` placeholders left.
+- Zero non-ASCII characters in any added line, aside from "Ismaïl" in
+  Signed-off-by/MODULE_AUTHOR/MAINTAINERS lines.
+- The cover letter body read in full, by eye, confirming plain English
+  throughout.
+
+Now waiting on review. Track replies via lore.kernel.org (behind an
+Anubis bot-check that blocks direct fetches - use the ratatoskr.run
+mirror, `ratatoskr.run/linux-sound/<yyyy>/<mm>/<id>/t`, found via
+search) or the recipients' own replies landing in the sender's inbox.
+
 ## v4 - RE-CUT AGAIN 2026-09-14 (DCO resolved, -20dB scope narrowed) - READY TO SEND, pending explicit go-ahead
 
 **The DCO blocker is gone.** David Fredman provided his real identity
