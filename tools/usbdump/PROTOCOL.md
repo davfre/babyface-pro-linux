@@ -1315,7 +1315,24 @@ BF_REG_MASTER_8 0x0006/7, BF_REG_MASTER_16 0x03e2/3):
   unit's DIM LED); the flag is cleared with wVal=0x0000.
 - DIM only ever touched the Phones (out 1) in this capture — the
   monitor output, matching "Dim on the Main Out".  The Linux driver
-  currently has no DIM control ("DIM doesn't dim" report).
+  now has a DIM control (added 2026-09-13), wired to exactly this
+  Phones-only burst.
+
+  **OPEN QUESTION (2026-09-14, raised by David Fredman, issue #4):**
+  "Main Out" is documented above (§ front-panel semantics) as a
+  TotalMix-side setting, reassignable, and DIM is called "a
+  configurable hotkey" there — meaning this capture may just show the
+  DEFAULT Main Out (Phones), not the ONLY possible target.  We have
+  never captured a session with Main Out reassigned to a different
+  output (e.g. AN1/2) to see whether the DIM burst follows it to a
+  different master register pair, or whether "Main Out" reassignment
+  is purely a host-side UI routing concept with no corresponding
+  protocol difference.  Needed to settle this properly: a fresh
+  Windows capture — set Main Out = AN1/2 in TotalMix's settings, press
+  DIM, see which master registers change (if any).  Until then, the
+  driver keeps the one behavior actually observed on the wire
+  (Phones-only) rather than guessing at a broader scope no capture
+  supports.
 
 ### System volume — HOST-SIDE stream gain, zero USB writes (cap_sysvol2.pcap, 2026-08-26)
 

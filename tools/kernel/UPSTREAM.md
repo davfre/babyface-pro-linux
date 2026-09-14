@@ -173,6 +173,58 @@ it as the record of what was actually mailed on 2026-09-02.
    linux-sound@vger.kernel.org, linux-kernel@vger.kernel.org. Re-run
    before actually mailing — MAINTAINERS entries can change.
 
+## v4 - RE-CUT AGAIN 2026-09-14 (DCO resolved, -20dB scope narrowed) - READY TO SEND, pending explicit go-ahead
+
+**The DCO blocker is gone.** David Fredman provided his real identity
+on issue #4: `David Fredman <davfre@gmail.com>`. Patch 1's
+`Co-developed-by:`/`Signed-off-by:` no longer carry
+`FILL-IN-BEFORE-SENDING` - checkpatch --strict on the generated patch
+now reports 0 errors (down from the 2 deliberate ones), and
+`get_maintainer.pl` lists David by name. This was the one remaining
+blocker; nothing else is holding the series back now.
+
+**A second, smaller fix went in alongside the DCO substitution.**
+David also flagged (issue #4, same session as his DCO reply) that the
+blanket -20 dB power-on default from the previous re-cut reached the
+four digital outputs (AS1/2, ADAT3/4, ADAT5/6, ADAT7/8) too, where
+there is no hazard to mitigate - narrowed to the two analog outputs
+(AN1/2, PH3/4) only; the digital ones keep the vendor software's 0 dB
+default. See KERNEL-DRIVER.md's "Power-on defaults" section for the
+full reasoning and the hardware verification.
+
+**Verification note for next time**: chasing the scope-fix's
+apparent non-effect on hardware cost real time before it turned out
+to be the already-documented `alsactl restore` trap (a stale
+system-wide `asound.state`, cached from before this exact change
+existed, silently overwriting the driver's correct fresh defaults
+about two seconds after every probe) rather than a bug in the fix
+itself. Confirmed via `dev_info` tracing at three points (the
+per-output write loop, the end of `babyface_write_default_mixer`, and
+inside `bf_master_get` itself) that the driver's own computation and
+cache were correct throughout, and the divergence appeared only
+between the function returning and the control being queried -
+exactly the window `alsactl restore` fires in. `sudo alsactl store`
+resolved it; re-verified against both a resynced state file and a
+genuinely fresh one (no prior entry for this card at all, simulating
+a first-time install). Same lesson as the 2026-09-07 phantom-power
+incident and this session's earlier crosspoint-restore test:
+**any power-on-default or restore check needs a synced `alsactl`
+state first, checked explicitly, not assumed** - a stale system file
+looks exactly like a driver bug and will burn time on the wrong
+target if not ruled out first.
+
+**DIM's scope was investigated too, not fixed.** David's other
+question (does DIM reach outputs besides Phones on a monitor setup)
+turned out to need more than a quick patch: PROTOCOL.md documents
+"Main Out" - what DIM actually targets - as a reassignable TotalMix
+setting, not a hardware constant, so the single capture we have
+(Main Out = Phones) may not be the only possible protocol behaviour.
+Guessing a broader scope without a capture showing what a reassigned
+Main Out actually writes risks inventing behaviour no evidence
+supports. Flagged as an open protocol question in PROTOCOL.md instead
+- the real next step is a fresh Windows capture with Main Out
+reassigned, not a code change.
+
 ## v4 - RE-CUT 2026-09-14 (v3 had a real crosspoint bug), not sent
 
 **A real driver bug was found and fixed 2026-09-14 while trying to

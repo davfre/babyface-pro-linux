@@ -491,18 +491,61 @@ arithmetic) - which is exactly why that verification mattered.
 
 ## Power-on defaults and card naming (decided 2026-09-13)
 
-- **Masters come up at -20 dB**, not at TotalMix's 0 dB. The routing
-  default is unchanged (every source into every output at unity), so
-  the card still makes sound with no user-space mixer at all - but
+- **Masters come up at -20 dB**, not at TotalMix's 0 dB - **on the two
+  analog outputs only** (AN1/2, PH3/4), narrowed 2026-09-15 after
+  David Fredman pointed out the original blanket six-output default
+  reached the four digital outputs too (AS1/2, ADAT3/4, ADAT5/6,
+  ADAT7/8, all carried over the single optical port). Nothing
+  downstream of a digital output can be damaged by a loud signal the
+  way a speaker or a pair of headphones can, so there is no hazard to
+  mitigate there, only a feed that would otherwise arrive 20 dB quiet
+  for no reason a receiving device could infer - those four keep
+  TotalMix's own 0 dB default. The routing default is unchanged (every
+  source into every output at unity), so the card still makes sound
+  with no user-space mixer at all - but on the two analog outputs
   those 14 sources SUM, and the default is re-applied on every fresh
   module load, before udev's `alsactl restore` can put the user's own
-  levels back. Raised by David Fredman in issue #4. The value is the
-  exact 8-bit/16-bit pair (`0xcb` / `0x0333`) that the hardware's own
-  DIM button writes, captured in `cap_dim2.pcap`, so it is measured
-  rather than chosen. **Consequence**: DIM applies an *absolute*
-  -20 dB, so with the new default it does nothing audible until a
+  levels back. The -20 dB value is the exact 8-bit/16-bit pair
+  (`0xcb` / `0x0333`) that the hardware's own DIM button writes,
+  captured in `cap_dim2.pcap`, so it is measured rather than chosen.
+  **Consequence**: DIM applies an *absolute* -20 dB on Phones, so with
+  the new default it does nothing audible there until the Phones
   master is raised above -20 dB. That is how the hardware has always
   behaved; it is simply now visible from the first second.
+  **Verified live** (2026-09-15): all 6 masters read back correctly
+  split (819/819/8192/8192/8192/8192) both on a genuinely fresh
+  `alsactl` state (no prior entry for this card) and after a
+  `rmmod`/`insmod` cycle with the state file back in sync -
+  `regress.sh --mixer-restore --disconnect-test`: 40/40. Chasing this
+  down on hardware hit the same `alsactl restore` trap the 2026-09-07
+  phantom-power incident already named: a stale system-wide
+  `asound.state` entry (819 for every master, cached during earlier
+  testing before this scope change existed) silently overwrote the
+  driver's freshly-computed correct defaults about two seconds after
+  every probe, for over half an hour of otherwise-inexplicable
+  results, until `sudo alsactl store` resynced it. Same lesson as
+  before: `--mixer-restore` testing (and any power-on-default check)
+  needs a synced state file first, or a stale one looks exactly like a
+  driver bug.
+- **DIM's scope is Phones-only, and that is confirmed faithful to the
+  hardware, not a driver limitation - with one real open question.**
+  PROTOCOL.md's own capture states plainly: "DIM only ever touched the
+  Phones (out 1) in this capture." But the same section also documents
+  that "Main Out" - what DIM actually targets - is a TotalMix-side
+  software setting, reassignable, and DIM is itself described there as
+  "also a configurable hotkey (Speaker B, Talkback...)". That means
+  the *protocol* is very likely capable of writing the DIM burst to a
+  different output's master registers when TotalMix's Main Out is
+  reassigned - we simply have never captured that case, only the
+  default (Main Out = Phones). David Fredman raised this
+  (2026-09-14, issue #4): on a monitor setup where speakers live on a
+  different output, DIM currently does nothing audible. **Not fixed**:
+  guessing which output to target without a capture showing what a
+  reassigned Main Out actually writes risks introducing behavior no
+  evidence supports, which is worse than the current honest gap. The
+  right next step is a fresh Windows capture (set Main Out = AN1/2 in
+  TotalMix, press DIM, see what changes) - flagged as an open protocol
+  question in PROTOCOL.md rather than guessed at in code.
 - **The front-panel DIM button acts** (wired 2026-09-13, confirmed on
   the physical unit the same day): two presses gave two `Dim Switch`
   and two `Front Panel Dim` events, clean toggle round-trip, no
