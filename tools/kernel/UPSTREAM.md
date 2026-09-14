@@ -173,7 +173,58 @@ it as the record of what was actually mailed on 2026-09-02.
    linux-sound@vger.kernel.org, linux-kernel@vger.kernel.org. Re-run
    before actually mailing — MAINTAINERS entries can change.
 
-## v4 - CUT 2026-09-13, not sent
+## v4 - RE-CUT 2026-09-14 (v3 had a real crosspoint bug), not sent
+
+**A real driver bug was found and fixed 2026-09-14 while trying to
+hardware-verify the crosspoint dB TLV added the day before, and it was
+present in both v3 (already mailed) and the first cut of v4.** The
+AN1/2 output's crosspoint fader had no audible effect on the signal
+for any source - a swept tone produced no level change at all, off
+through +6 dB, while the identical control targeting any other output
+worked correctly. Root cause and fix are in KERNEL-DRIVER.md's
+"THE AN1/2 CROSSPOINT BUG" entry and in `bf_xpoint_write()`'s own
+comment. This forced a full re-derivation of the v4 patch series
+(the fix lives in patch 1's core+mixer scope), documented below.
+
+`patches/v4-000[0-3]-*.patch`, generated against **next-20260911**.
+Three patches, not four:
+
+- `[1/3]` core + PCM + the ALSA mixer
+- `[2/3]` the front-panel poll and controls
+- `[3/3]` the hardware DSP EQ
+
+**Why three and not four.** v3 split the mixer into its own patch,
+which forced the earlier patches to carry stub control functions that
+later patches replaced. The mixer and the core share
+`struct snd_usb_babyface` and the entire save/restore path -
+`bf_saved` *is* mixer state - so that seam was artificial and made
+review harder, not easier. The panel and the EQ do separate cleanly:
+the driver builds with zero warnings without either. **Every patch
+here contains only final code; nothing a later patch rewrites.** Each
+was built in-tree on its own (`make sound/usb/babyfacepro/` after
+checking out that commit), 0 errors and 0 warnings at each step.
+
+**Re-cut lesson (2026-09-14):** deriving patch 1 (core+mixer, no
+panel, no EQ) by stripping functions from the full source left dead
+code behind twice - a 28-entry CORDIC table plus two EQ text arrays,
+and separately a panel enum plus three text arrays - because the
+stripping only removed *functions*, not the file-scope `static const`
+data those functions used. None of it triggered a compiler warning:
+this kernel's default build flags don't warn on unused file-scope
+`static const` arrays (`-Wunused-variable` covers locals, not these).
+checkpatch didn't catch it either. The only thing that did was a
+purpose-built same-file "declared once, used once" scanner. Same class
+of gap as the S24_LE test-tooling and the Rust-comment
+`get_maintainer.pl` misfires from the day before: automated checks
+that pass are not the same as a clean patch, and each of those three
+incidents was caught by a different, narrowly-built check because no
+single tool covers all of them. Re-running the same scanner against
+the *shipped* driver (not just the derived patch) found 7 more orphaned
+defines (`BF_WORDS_PER_FRAME`, `BF_REQ_STATUS`, `BF_REQ_SESSION_STOP`,
+`BF_REF_LEVEL_MINUS10DBV`, `BF_MASTER_0DB`, `BF_MASTER_8_0DB`,
+`BF_MASTER_UNMUTE`) - pre-existing, unrelated to this bug, left alone
+for now as a separate, low-priority cleanup rather than scope-creeping
+into this fix.
 
 `patches/v4-000[0-3]-*.patch`, generated against **next-20260911**.
 Three patches, not four:

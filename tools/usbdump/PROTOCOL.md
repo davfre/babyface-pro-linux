@@ -818,8 +818,28 @@ Loading a TotalMix scene writes the COMPLETE mixer state as a burst:
 
 Interesting: a single fader gesture during the load produced BOTH the
 low-map and standard-map writes at the same value (0x0000 for muted,
-0x0243 for the AN1→AN1/2 fader at -20 dB…). The two maps are always in
-sync; writing either (or both) is safe.
+0x0243 for the AN1→AN1/2 fader at -20 dB…). The two maps are always
+written in sync by the vendor software.
+
+**CORRECTED 2026-09-14 — "writing either (or both) is safe" was wrong,
+and it was a real driver bug for over three weeks.** Hardware-verified
+with a live signal (a generated tone via PB1, and separately AN1 into
+its own crosspoint): sweeping ONLY the standard map
+(`0x0034+0x0034·out+idx`) for the AN1/2 output produces NO audible
+change at all, off (raw 0) through +6 dB. The exact same code, same
+value, targeting any OTHER output (verified on PH3/4) tracks the fader
+correctly. The low map is not a shadow of the standard map for AN1/2 -
+it is what the AN1/2 submix actually sums from; the standard map alone
+does nothing for this one output. Every other output only has a
+standard map, so this asymmetry is easy to miss once (the kernel
+driver did, in `bf_xpoint_put()`, `babyface_write_default_mixer()` and
+`babyface_restore_state()`, from the crosspoint matrix's introduction
+until 2026-09-14 - see KERNEL-DRIVER.md). `bf_split_apply()`,
+`bf_phase_apply()` and `bf_trim_apply()` already wrote both maps for
+their own AN1/2-only features and were never affected; `tuxmix-usb`'s
+generic fader path (`usb.rs::set_volume`) already synced the low map
+for `Output::An12` too - the kernel's plain crosspoint fader was the
+one place this was missed.
 
 **EQ/FX = bulk OUT ep 0x0A (resolved by cap_eq.pcap timestamps).** A
 live EQ/reverb toggle on the mic input (sound audibly changed) produced

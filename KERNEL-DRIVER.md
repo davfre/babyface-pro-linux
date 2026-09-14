@@ -54,7 +54,7 @@ libasound_module_pcm_tuxmix.so  ← PipeWire via spa-alsa (sink/source)
 | System volume = PipeWire SOFTWARE volume | ✅ DONE 2026-08-26 (cap_sysvol2.pcap: the Windows volume is a host-side stream gain, zero USB writes): the masters are named per output so SPA finds no "Master" element → the sink falls back to software volume; `wpctl set-volume` no longer moves any hardware register (verified). See “System-volume model — CORRECTED AGAIN” |
 | Controls: 4 preamp gains — TWO laws | ✅ AN1/2 mic: 0-65 dB in 1 dB steps, packed `(fine << 5) | coarse` (corrected 2026-09-13, was wrongly read as 3.25 dB/step + a transaction counter — see the gain-encoding entry below); AN3/4 instrument: 0-9 dB control, raw = dB×2 = 0-18 (0.5 dB/step, cap_gain34 — `bf_gain_max_db`) |
 | Controls: 2× phantom + 2× PAD (0x17 0x003F + 0x21 commit) | ✅ (LEDs + relay clicks) |
-| Controls: 84 crosspoints (6 out × 14 src) — output order corrected | ✅ (Phones = block 0) |
+| Controls: 84 crosspoints (6 out × 14 src) — output order corrected | ✅ (Phones = block 0); AN1/2's low-map requirement found + fixed 2026-09-14, see below |
 | Controls: pitch, loopback ×6, AN1>2, link, width, FX send, MS | ✅ |
 | Loopback record staging | ✅ NO STAGING NEEDED (2026-08-26): the record is 1:1 with the master on Windows (aligned captures) AND Linux (live, S16 tone: −20 dBFS → −20.0).  The “fixed 2^-5 tap”/×32 were artifacts of mktone.py's broken 4-byte tone (chain ran −48 dB low → record quantizer → coarse square).  ×32 REVERTED; mktone.py → S16 |
 | Front-panel readback (0x17 poll at 50 Hz → read-only button/wheel/IN/OUT/MIX/DIM ALSA controls, babyfacepro-ctl.c) | ✅ hardware-validated 2026-08-26 (all six flash codes + wheel; consume-on-get bug fixed — controls hold the last state) |
@@ -420,6 +420,74 @@ first-impulse method.)  Full sweep `tools/kernel/latency-sweep.sh`:
     resumes any active stream cleanly (XRUN or suspend, not a full card
     reset).  Deliberately a **post-merge follow-up**, not an RFC
     blocker — it touches the streaming core right before submission.
+
+## ✅ 2026-09-14 — THE AN1/2 CROSSPOINT BUG: FIXED (the "low map" was not a shadow)
+
+**The AN1/2 output's own crosspoint fader had no audible effect on the
+signal, for every source, the whole time the matrix has existed.**
+Found while trying to hardware-verify the crosspoint fader's TLV curve
+(the 2026-09-13 dB-linear TLV added to the crosspoints had never been
+checked against a real signal, only against the register-value
+arithmetic) - which is exactly why that verification mattered.
+
+- **Symptom**: sweeping a crosspoint fader from off (raw 0) through
+  0 dB to +6 dB, with a real signal (a generated tone routed via PB1,
+  and separately AN1's own preamp) into the AN1/2 output, produced NO
+  change in the captured level - constant at every fader position,
+  including "off". The exact same test against the PH3/4 (Phones)
+  output, same code, same tone, same measurement, gave a clean
+  monotonic response matching the fader law to within 0.6 dB (-62.6 dB
+  near "off" to -12.0 dB at +6 dB, expected +6.02 dB span).
+- **Root cause**: `bf_xpoint_put()` (the crosspoint ALSA control),
+  `babyface_write_default_mixer()` (the probe-time unity default) and
+  `babyface_restore_state()` (the re-probe/resume replay) all wrote
+  only the "standard" crosspoint map
+  (`BF_REG_CROSS_BASE_L/R + BF_REG_CROSS_STRIDE*blk + idx`). For the
+  AN1/2 output specifically, PROTOCOL.md's own "Scene load" capture
+  already showed the vendor software always writes a SECOND register,
+  the "low map" (`BF_REG_LOWMAP_BASE_L/R + idx`, no block multiplier -
+  it only exists for this one output), at the same value, every time.
+  The driver's own comment called it "only a shadow" and skipped it in
+  these three places - wrongly. The low map is what the AN1/2 submix
+  actually sums from; the standard map alone reaches a register the
+  hardware doesn't act on for this output. Every other output (Phones,
+  AS1/2, ADAT×3) has no low map at all, which is presumably how the
+  wrong assumption generalized from "5 of 6 outputs" to "all 6".
+- **Not a fresh mistake in unfamiliar territory**: `bf_split_apply()`,
+  `bf_phase_apply()` and `bf_trim_apply()` already wrote both maps
+  correctly for their own AN1/2-only features (stereo split, phase,
+  trim) - the pattern was right there to copy. `tuxmix-usb`'s own
+  generic fader path (`usb.rs::set_volume`) already keeps the low map
+  "in sync... TotalMix writes both" for `Output::An12`; TuxMix's
+  `apply_scene` (its state-restore path) does too. The kernel's plain
+  crosspoint fader control was the one place, across both codebases,
+  this was missed.
+- **The fix**: a new exported helper, `bf_xpoint_write()`, writes the
+  low map first (when `out == 0`) and then the standard map, replacing
+  the triplicated write sequence in all three call sites. Verified
+  hardware-fixed with the same tone-sweep methodology that found the
+  bug: off/0 dB/+3 dB/+6 dB now read -55.5/-18.5/-14.5/-12.0 dB on
+  AN1/2, matching the already-working Phones result almost exactly.
+  Confirmed the fix survives a real unbind/rebind with a non-default
+  crosspoint value, both the cached control value and the actual audio
+  level. `regress.sh --mixer-restore --disconnect-test`: 40/40.
+- **Practical impact**: every source ever routed into the default
+  output (AN1/2) via its crosspoint fader, rather than left at the
+  probe-time unity default, was silently inaudible. The probe-time
+  default itself (unity into every source) happened to look correct
+  by accident, because `babyface_write_default_mixer()` never touched
+  the low map either - meaning AN1/2 has been running on whatever the
+  low map held from `bf_cold_init`'s register clear (0x0000, i.e.
+  silence) this whole time, and the audible AN1/2 signal any tester
+  actually heard came from sources whose low map got a real value via
+  a DIFFERENT, AN1/2-specific control (phase/trim/split) rather than
+  from the general-purpose fader.  Any earlier "AN1/2 works fine"
+  observation almost certainly never moved this specific fader with a
+  real signal in the loop - which was itself exactly the gap the
+  2026-09-06 test (AN1 into PH3/4) left open, and this investigation's
+  starting point (see the "v4 verification" thread below).
+- PROTOCOL.md's "writing either (or both) is safe" claim about the two
+  maps is corrected in place.
 
 ## Power-on defaults and card naming (decided 2026-09-13)
 
