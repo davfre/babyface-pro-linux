@@ -1,6 +1,6 @@
-From 361383462f70b3bf576e8a683162ace737ea2d54 Mon Sep 17 00:00:00 2001
+From b8ea7aa9942ba54cfed5c269f73ac4883d3cb384 Mon Sep 17 00:00:00 2001
 From: =?UTF-8?q?Isma=C3=AFl=20Bahloul?= <i.bahloul01@gmail.com>
-Date: Sun, 13 Sep 2026 19:39:26 +0100
+Date: Mon, 14 Sep 2026 08:11:22 +0100
 Subject: [RFC PATCH v4 1/3] ALSA: usb: add RME Babyface Pro driver
  (proprietary mode)
 MIME-Version: 1.0
@@ -59,19 +59,19 @@ IOMMU-translated host; and the mic gain register was decoded as a
 fine part of the gain, which left the control reaching 21 of its 66
 positions with up to 2 dB of non-determinism.
 
-Assisted-by: DeepSeek V4 Flash
 Co-developed-by: David Fredman <FILL-IN-BEFORE-SENDING>
 Signed-off-by: David Fredman <FILL-IN-BEFORE-SENDING>
+Assisted-by: DeepSeek V4 Flash
 Signed-off-by: Ismaïl Bahloul <i.bahloul01@gmail.com>
 ---
  MAINTAINERS                             |    6 +
  sound/usb/Kconfig                       |   20 +
  sound/usb/Makefile                      |    2 +-
  sound/usb/babyfacepro/Makefile          |    4 +
- sound/usb/babyfacepro/babyfacepro-ctl.c | 2030 +++++++++++++++++++++++
- sound/usb/babyfacepro/babyfacepro.c     | 1566 +++++++++++++++++
- sound/usb/babyfacepro/babyfacepro.h     |  431 +++++
- 7 files changed, 4058 insertions(+), 1 deletion(-)
+ sound/usb/babyfacepro/babyfacepro-ctl.c | 2022 +++++++++++++++++++++++
+ sound/usb/babyfacepro/babyfacepro.c     | 1557 +++++++++++++++++
+ sound/usb/babyfacepro/babyfacepro.h     |  388 +++++
+ 7 files changed, 3998 insertions(+), 1 deletion(-)
  create mode 100644 sound/usb/babyfacepro/Makefile
  create mode 100644 sound/usb/babyfacepro/babyfacepro-ctl.c
  create mode 100644 sound/usb/babyfacepro/babyfacepro.c
@@ -148,10 +148,10 @@ index 000000000..a50647a06
 +obj-$(CONFIG_SND_USB_BABYFACE_PRO) += snd-usb-babyface-pro.o
 diff --git a/sound/usb/babyfacepro/babyfacepro-ctl.c b/sound/usb/babyfacepro/babyfacepro-ctl.c
 new file mode 100644
-index 000000000..4c3bd0404
+index 000000000..0093b864d
 --- /dev/null
 +++ b/sound/usb/babyfacepro/babyfacepro-ctl.c
-@@ -0,0 +1,2030 @@
+@@ -0,0 +1,2022 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * RME Babyface Pro FS - proprietary-mode USB audio driver
@@ -340,8 +340,9 @@ index 000000000..4c3bd0404
 +	}
 +
 +	/* Every source into every output pair, L and R, at 0 dB (the
-+	 * standard map; the low map is only a shadow).  The addresses use
-+	 * the source's idx_l/idx_r on the canonical block - writing the raw
++	 * standard map, plus the low map on AN1/2 - see bf_xpoint_write's
++	 * own comment for why AN1/2 needs both).  The addresses use the
++	 * source's idx_l/idx_r on the canonical block - writing the raw
 +	 * index on both bases would put PB1 R on the L side and PB1 L on
 +	 * the R side (L+R on both = mono).  The "cross" registers
 +	 * (L-reg idx_r / R-reg idx_l) are left at 0; the restore at stream
@@ -351,18 +352,8 @@ index 000000000..4c3bd0404
 +		unsigned int blk = bf_xpoint_block[out];
 +
 +		for (src = 0; src < 14; src++) {
-+			flag = bf_flag_cycle[chip->flag_cnt];
-+			chip->flag_cnt = (chip->flag_cnt + 1) & 3;
-+			ret = bf_vendor_write(chip, BF_REQ_CROSSPOINT, BF_FADER_0DB,
-+					      (BF_REG_CROSS_BASE_L +
-+					       BF_REG_CROSS_STRIDE * blk +
-+					       bf_sources[src].idx_l) | flag);
-+			if (ret < 0)
-+				return ret;
-+			ret = bf_vendor_write(chip, BF_REQ_CROSSPOINT, BF_FADER_0DB,
-+					      (BF_REG_CROSS_BASE_R +
-+					       BF_REG_CROSS_STRIDE * blk +
-+					       bf_sources[src].idx_r) | flag);
++			ret = bf_xpoint_write(chip, out, src, BF_FADER_0DB,
++					      BF_FADER_0DB);
 +			if (ret < 0)
 +				return ret;
 +		}
@@ -631,6 +622,58 @@ index 000000000..4c3bd0404
 + */
 +static const DECLARE_TLV_DB_LINEAR(bf_xpoint_tlv, TLV_DB_GAIN_MUTE, 600);
 +
++/* Write a crosspoint slot on the wire: the standard map always, and -
++ * for the AN1/2 output only - the low map as well.
++ *
++ * HARDWARE-VERIFIED 2026-09-14: AN1/2 is not just another output with
++ * a redundant "shadow" register, despite what this file used to say.
++ * Sweeping only the standard map (BF_REG_CROSS_BASE_*) into AN1/2
++ * produced no audible change at all, off through +6 dB, with two
++ * independent sources (a generated tone via PB1, a live mic via AN2);
++ * the exact same code path targeting any other output (verified on
++ * PH3/4) tracked the fader correctly, off to +6 dB within 0.6 dB.
++ * PROTOCOL.md's "Scene load" capture explains why: the vendor software
++ * always writes BOTH the standard map and the low map
++ * (BF_REG_LOWMAP_BASE_*) together for AN1/2's own crosspoints, at the
++ * same value - the low map is what actually feeds that output's sum;
++ * the standard map alone is not enough. Every other output only has a
++ * standard map.
++ *
++ * bf_split_apply() already knew this (it writes both for AN1/2's
++ * playback pairs); this generalises the same pattern to the plain
++ * fader.
++ */
++int bf_xpoint_write(struct snd_usb_babyface *chip, int out, int src,
++		    u16 l, u16 r)
++{
++	unsigned int blk = bf_xpoint_block[out];
++	const struct bf_source *s = &bf_sources[src];
++	u16 flag;
++	int ret;
++
++	if (out == 0) {
++		ret = bf_vendor_write(chip, BF_REQ_CROSSPOINT, l,
++				      BF_REG_LOWMAP_BASE_L + s->idx_l);
++		if (ret < 0)
++			return ret;
++		ret = bf_vendor_write(chip, BF_REQ_CROSSPOINT, r,
++				      BF_REG_LOWMAP_BASE_R + s->idx_r);
++		if (ret < 0)
++			return ret;
++	}
++
++	flag = bf_flag_cycle[chip->flag_cnt];
++	chip->flag_cnt = (chip->flag_cnt + 1) & 3;
++	ret = bf_vendor_write(chip, BF_REQ_CROSSPOINT, l,
++			      (BF_REG_CROSS_BASE_L + BF_REG_CROSS_STRIDE * blk +
++			       s->idx_l) | flag);
++	if (ret < 0)
++		return ret;
++	return bf_vendor_write(chip, BF_REQ_CROSSPOINT, r,
++			       (BF_REG_CROSS_BASE_R + BF_REG_CROSS_STRIDE * blk +
++				s->idx_r) | flag);
++}
++
 +static int bf_xpoint_info(struct snd_kcontrol *kctl,
 +			  struct snd_ctl_elem_info *uinfo)
 +{
@@ -660,11 +703,8 @@ index 000000000..4c3bd0404
 +	struct snd_usb_babyface *chip = snd_kcontrol_chip(kctl);
 +	int out = kctl->private_value >> 8;
 +	int src = kctl->private_value & 0xff;
-+	unsigned int blk = bf_xpoint_block[out];
-+	const struct bf_source *s = &bf_sources[src];
 +	u16 l = ucontrol->value.integer.value[0];
 +	u16 r = ucontrol->value.integer.value[1];
-+	u16 flag;
 +	int ret = 0;
 +
 +	if (l > BF_FADER_TOP || r > BF_FADER_TOP)
@@ -674,20 +714,7 @@ index 000000000..4c3bd0404
 +	if (l == chip->xpoint[out][src][0] && r == chip->xpoint[out][src][1])
 +		goto out;
 +
-+	flag = bf_flag_cycle[chip->flag_cnt];
-+	chip->flag_cnt = (chip->flag_cnt + 1) & 3;
-+
-+	/* L register = 0x0034 + 0x34*blk + idx, R = 0x004E + 0x34*blk + idx
-+	 * (mono sources use the same idx on both sides).
-+	 */
-+	ret = bf_vendor_write(chip, BF_REQ_CROSSPOINT, l,
-+			      (BF_REG_CROSS_BASE_L + BF_REG_CROSS_STRIDE * blk +
-+			       s->idx_l) | flag);
-+	if (ret < 0)
-+		goto out;
-+	ret = bf_vendor_write(chip, BF_REQ_CROSSPOINT, r,
-+			      (BF_REG_CROSS_BASE_R + BF_REG_CROSS_STRIDE * blk +
-+			       s->idx_r) | flag);
++	ret = bf_xpoint_write(chip, out, src, l, r);
 +	if (ret < 0)
 +		goto out;
 +
@@ -2147,47 +2174,12 @@ index 000000000..4c3bd0404
 +}
 +
 +/* -- controls -------------------------- */
-+
-+#define BF_EQ_Q27		(1 << 27)
-+#define BF_EQ_LC_OFF		0x04000000
-+#define BF_EQ_BLOCK_LEN		64
-+
-+/* atan(2^-i) x 2^27 (CORDIC). */
-+static const s64 bf_atan_tab[28] = {
-+	0x6487ED5, 0x3B58CE1, 0x1F5B760, 0xFEADD5,
-+	0x7FD56F, 0x3FFAAB, 0x1FFF55, 0xFFFEB,
-+	0x7FFFD, 0x40000, 0x20000, 0x10000,
-+	0x8000, 0x4000, 0x2000, 0x1000,
-+	0x800, 0x400, 0x200, 0x100,
-+	0x80, 0x40, 0x20, 0x10,
-+	0x8, 0x4, 0x2, 0x1,
-+};
-+
-+/* ---- fixed-point helpers (Q27 in/out, s64 intermediates) ---- */
-+
-+/* ---- low cut ---- */
-+
-+/* ---- block build + bulk write ---- */
-+
-+/* ---- ALSA controls (4 strips x 19 controls) ---- */
-+
-+#define EQ_STRIP(pv)	((pv) >> 8)
-+#define EQ_PARAM(pv)	((pv) & 0xff)
-+/* params: 0 enable, 1-3 type, 4-6 freq, 7-9 q, 10-12 gain, 13 lc freq, 14 lc slope */
-+
-+static const char *const bf_eq_type_texts[] = {
-+	"Off", "Bell", "Low Shelf", "High Shelf", NULL
-+};
-+
-+static const char *const bf_eq_slope_texts[] = {
-+	"6 dB/oct", "12 dB/oct", "18 dB/oct", "24 dB/oct", NULL
-+};
 diff --git a/sound/usb/babyfacepro/babyfacepro.c b/sound/usb/babyfacepro/babyfacepro.c
 new file mode 100644
-index 000000000..de18efe95
+index 000000000..2fba16e54
 --- /dev/null
 +++ b/sound/usb/babyfacepro/babyfacepro.c
-@@ -0,0 +1,1566 @@
+@@ -0,0 +1,1557 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * RME Babyface Pro - proprietary-mode USB audio driver
@@ -2197,7 +2189,8 @@ index 000000000..de18efe95
 + * the card lifecycle (probe/disconnect/PM/module entry).
 + *
 + * See babyfacepro.h for the shared device state and register map,
-+ * and babyfacepro-ctl.c for the ALSA control surface.
++ * and babyfacepro-ctl.c for the ALSA control surface (mixer, front
++ * state persistence and card lifecycle).
 + */
 +#include <linux/log2.h>
 +#include <linux/math64.h>
@@ -2413,7 +2406,6 @@ index 000000000..de18efe95
 +int babyface_restore_state(struct snd_usb_babyface *chip)
 +{
 +	int out, src, mic, ret;
-+	u16 flag;
 +
 +	/* Preamp state + commit. */
 +	ret = bf_preamp_state_write(chip);
@@ -2434,25 +2426,16 @@ index 000000000..de18efe95
 +	if (ret < 0)
 +		return ret;
 +
-+	/* Crosspoints (canonical out -> register block). */
++	/* Crosspoints (canonical out -> register block; AN1/2 also needs
++	 * the low map, see bf_xpoint_write's own comment).
++	 */
 +	for (out = 0; out < 6; out++) {
 +		unsigned int blk = bf_xpoint_block[out];
 +
 +		for (src = 0; src < 14; src++) {
-+			flag = bf_flag_cycle[chip->flag_cnt];
-+			chip->flag_cnt = (chip->flag_cnt + 1) & 3;
-+			ret = bf_vendor_write(chip, BF_REQ_CROSSPOINT,
++			ret = bf_xpoint_write(chip, out, src,
 +					      chip->xpoint[out][src][0],
-+					      (BF_REG_CROSS_BASE_L +
-+					       BF_REG_CROSS_STRIDE * blk +
-+					       bf_sources[src].idx_l) | flag);
-+			if (ret < 0)
-+				return ret;
-+			ret = bf_vendor_write(chip, BF_REQ_CROSSPOINT,
-+					      chip->xpoint[out][src][1],
-+					      (BF_REG_CROSS_BASE_R +
-+					       BF_REG_CROSS_STRIDE * blk +
-+					       bf_sources[src].idx_r) | flag);
++					      chip->xpoint[out][src][1]);
 +			if (ret < 0)
 +				return ret;
 +		}
@@ -3756,10 +3739,10 @@ index 000000000..de18efe95
 +MODULE_LICENSE("GPL");
 diff --git a/sound/usb/babyfacepro/babyfacepro.h b/sound/usb/babyfacepro/babyfacepro.h
 new file mode 100644
-index 000000000..9d8714bdf
+index 000000000..113963956
 --- /dev/null
 +++ b/sound/usb/babyfacepro/babyfacepro.h
-@@ -0,0 +1,431 @@
+@@ -0,0 +1,388 @@
 +/* SPDX-License-Identifier: GPL-2.0-only */
 +/*
 + * RME Babyface Pro FS - proprietary-mode USB audio driver
@@ -3830,13 +3813,6 @@ index 000000000..9d8714bdf
 +#define BF_FRAMES_PER_URB_DEFAULT	256
 +#define BF_NURBS_DEFAULT		8
 +
-+/* Front-panel poll interval default - Windows polls the 5-register
-+ * status set at ~50 cycles/s (20 ms); match that.  Tunable via the
-+ * panel_poll_ms module param for reviewers/distros who want a slower
-+ * (or faster) rate than the Windows-matching default.
-+ */
-+#define BF_PANEL_POLL_MS_DEFAULT	20
-+
 +#define BF_WORDS_PER_FRAME		14	/* 14 x 32-bit words per frame */
 +
 +/* Consecutive URB errors (CRC/babble/protocol or a failed resubmit)
@@ -3876,10 +3852,15 @@ index 000000000..9d8714bdf
 +#define BF_REG_CROSS_STRIDE		0x0034
 +/* Low map (the AN1/2 monitor bus's own per-source registers, one set
 + * shared across every output - not one per output block like the
-+ * standard crosspoint map above). Used ad-hoc today by bf_ms_put/
-+ * width's own hardcoded addresses; named here for stereo split, which
-+ * needs the general form. PROTOCOL.md / tuxmix-usb's `map::low_map_l`/
-+ * `low_map_r` (hardware-verified) use the identical BASE + idx shape.
++ * standard crosspoint map above). NOT a shadow/mirror of the standard
++ * map for AN1/2: it is what that output actually sums from, and the
++ * standard map alone has no audible effect on it (hardware-verified
++ * 2026-09-14, see bf_xpoint_write's own comment and KERNEL-DRIVER.md).
++ * Used by bf_ms_put/width's own hardcoded addresses, by bf_split_apply/
++ * bf_phase_apply/bf_trim_apply for their own AN1/2-only features, and
++ * by bf_xpoint_write for the general crosspoint fader.  PROTOCOL.md /
++ * tuxmix-usb's `map::low_map_l`/`low_map_r` (hardware-verified) use
++ * the identical BASE + idx shape.
 + */
 +#define BF_REG_LOWMAP_BASE_L		0x0000	/* + idx_l */
 +#define BF_REG_LOWMAP_BASE_R		0x001a	/* + idx_r */
@@ -3908,36 +3889,6 @@ index 000000000..9d8714bdf
 +#define BF_CROSS_L_LAST			23
 +#define BF_CROSS_R_FIRST		4
 +#define BF_CROSS_R_LAST			22
-+
-+/* Front-panel readback (babyfacepro-ctl.c): 0x17 read at wIdx 0x0000 - the index
-+ * the Windows driver polls (cap_buttons2.pcap).  byte0 = preamp 48V/PAD,
-+ * byte1 = OUT sel + DIM/MIX bits, byte2 = IN sel + wheel counter,
-+ * byte3 = button flash (see babyfacepro-ctl.c for the full layout).
-+ */
-+#define BF_REG_PANEL_READ		0x0000
-+#define BF_PANEL_IN_SHIFT		4
-+#define BF_PANEL_IN_CH12		0x04
-+#define BF_PANEL_IN_CH34		0x05
-+#define BF_PANEL_IN_OPT			0x06
-+/* OUT selection - the gain-display-mode encoding (cap_dim.pcap);
-+ * babyfacepro-ctl.c also accepts the base-mode 0x01/0x02 (cap_buttons.pcap).
-+ */
-+#define BF_PANEL_OUT_CH12		0x04
-+#define BF_PANEL_OUT_PHONES		0x05
-+#define BF_PANEL_OUT_OPT		0x06
-+#define BF_PANEL_FLASH_IN		0x41
-+#define BF_PANEL_FLASH_SET		0x42
-+#define BF_PANEL_FLASH_MIX		0x44
-+#define BF_PANEL_FLASH_OUT		0x48
-+#define BF_PANEL_FLASH_SELECT		0x50
-+#define BF_PANEL_FLASH_DIM		0x60
-+#define BF_PANEL_BTN_NONE		0
-+#define BF_PANEL_BTN_IN			1
-+#define BF_PANEL_BTN_SET		2
-+#define BF_PANEL_BTN_MIX		3
-+#define BF_PANEL_BTN_OUT		4
-+#define BF_PANEL_BTN_SELECT		5
-+#define BF_PANEL_BTN_DIM		6
 +
 +/* Preamp state byte (0x17, wIdx 0x003F - full state, verified).
 + * NOTE 2026-08-26 (cap_reflevel3.pcap): the 0x0C "base" is NOT a
@@ -3991,16 +3942,6 @@ index 000000000..9d8714bdf
 + */
 +#define BF_MASTER_MINUS20_8		0xcb
 +#define BF_MASTER_MINUS20_16		0x0333
-+
-+/* The front-panel gain/display family (0x1A, wIdx 0x000A + mic 0-3;
-+ * cap_panel/cap_mix.pcap): in gain mode the wheel writes the "ADC
-+ * gain" here (drives the same preamp as the GUI 0x0000+mic); in MIX
-+ * (fader) mode the same registers carry the VU DISPLAY shadow -
-+ * TotalMix writes the monitoring level display value (0..~31) and the
-+ * card lights the input VU segments accordingly (hardware-verified
-+ * 2026-08-26 live: sweeping 0x1A values moved the input VU).
-+ */
-+#define BF_REG_PANEL_GAIN		0x000a
 +
 +/* Crosspoint fader curve: 0 dB = 0x16a0, +6 dB = 0x2d41 (fader curve,
 + * DIFFERENT from the master 0x4000 top - see CALIBRATION.md).
@@ -4145,9 +4086,6 @@ index 000000000..9d8714bdf
 +extern const u16 bf_flag_cycle[4];
 +extern const struct bf_source bf_sources[14];
 +
-+/* babyfacepro-ctl.c - the DSP EQ (struct snd_usb_babyface is defined above). */
-+void bf_eq_band_words(s32 *w, int type, s32 freq_hz, s32 q100,
-+		      s32 gain_x10, s32 fs);
 +extern const u8 bf_xpoint_block[6];
 +extern const struct snd_pcm_hw_constraint_list bf_rates_constraint;
 +
@@ -4168,6 +4106,8 @@ index 000000000..9d8714bdf
 +int babyface_write_default_mixer(struct snd_usb_babyface *chip);
 +int bf_apply_masters(struct snd_usb_babyface *chip);
 +int bf_loopback_write_map(struct snd_usb_babyface *chip, int out, bool on);
++int bf_xpoint_write(struct snd_usb_babyface *chip, int out, int src,
++		    u16 l, u16 r);
 +int bf_phase_apply(struct snd_usb_babyface *chip, int mic, bool invert);
 +int bf_split_apply(struct snd_usb_babyface *chip, int pb, bool split);
 +int bf_trim_apply(struct snd_usb_babyface *chip, int mic, int trim_db2);

@@ -1,6 +1,6 @@
-From 3d7110cec497dae301dfd8a77ab0004e69e837cf Mon Sep 17 00:00:00 2001
+From 173af2e53fb7617267bc1cc6da13ccafcd721db3 Mon Sep 17 00:00:00 2001
 From: =?UTF-8?q?Isma=C3=AFl=20Bahloul?= <i.bahloul01@gmail.com>
-Date: Sun, 13 Sep 2026 19:39:53 +0100
+Date: Mon, 14 Sep 2026 08:12:06 +0100
 Subject: [RFC PATCH v4 0/3] ALSA: usb: add RME Babyface Pro driver (proprietary mode)
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
@@ -15,6 +15,23 @@ isochronous path, so it cannot be a quirk on top of snd-usb-audio and
 needs a standalone driver, modelled on snd-usb-caiaq.
 
 Changes since v3:
+
+ - A real bug in the crosspoint routing matrix, found while trying to
+   hardware-verify the dB TLV metadata added to the crosspoint faders
+   (below): the AN1/2 output's own crosspoint fader had no audible
+   effect on the signal, for every source, for as long as the matrix
+   has existed - a generated tone swept from off through +6 dB
+   produced no change at all, while the identical control targeting
+   any other output tracked the fader correctly. The vendor software's
+   own capture shows why: for this one output it always writes a
+   second register (the "low map") alongside the usual crosspoint
+   address, at the same value; the driver wrote only the usual
+   address. Three call sites (the live control, the probe-time
+   default, and the reconnect/resume replay) needed the same fix,
+   folded into one exported helper. Verified fixed with the same
+   tone-sweep method that found it, and that a real crosspoint value
+   survives an actual unbind/rebind, both the cached control and the
+   audible level.
 
  - Two real bugs found, diagnosed and fixed by David Fredman, who also
    became this driver's second tester:
@@ -57,7 +74,9 @@ Changes since v3:
    SET already toggled phantom from the same poll.
 
  - Added dB TLV information to the preamp gain, trim and crosspoint
-   controls; only the output masters had any before.
+   controls; only the output masters had any before.  Hardware-
+   verifying the crosspoint curve is what surfaced the routing bug
+   above.
 
  - Fixed a state-restore bug in the input trim: it is one shared
    register per input pair but two per-channel controls, and the
@@ -119,10 +138,10 @@ Ismaïl Bahloul (3):
  sound/usb/Kconfig                       |   20 +
  sound/usb/Makefile                      |    2 +-
  sound/usb/babyfacepro/Makefile          |    4 +
- sound/usb/babyfacepro/babyfacepro-ctl.c | 3453 +++++++++++++++++++++++
- sound/usb/babyfacepro/babyfacepro.c     | 1603 +++++++++++
- sound/usb/babyfacepro/babyfacepro.h     |  487 ++++
- 7 files changed, 5574 insertions(+), 1 deletion(-)
+ sound/usb/babyfacepro/babyfacepro-ctl.c | 3480 +++++++++++++++++++++++
+ sound/usb/babyfacepro/babyfacepro.c     | 1593 +++++++++++
+ sound/usb/babyfacepro/babyfacepro.h     |  494 ++++
+ 7 files changed, 5598 insertions(+), 1 deletion(-)
  create mode 100644 sound/usb/babyfacepro/Makefile
  create mode 100644 sound/usb/babyfacepro/babyfacepro-ctl.c
  create mode 100644 sound/usb/babyfacepro/babyfacepro.c

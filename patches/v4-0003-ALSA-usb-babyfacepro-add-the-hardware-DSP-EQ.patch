@@ -1,6 +1,6 @@
-From 3d7110cec497dae301dfd8a77ab0004e69e837cf Mon Sep 17 00:00:00 2001
+From 173af2e53fb7617267bc1cc6da13ccafcd721db3 Mon Sep 17 00:00:00 2001
 From: =?UTF-8?q?Isma=C3=AFl=20Bahloul?= <i.bahloul01@gmail.com>
-Date: Sun, 13 Sep 2026 19:39:26 +0100
+Date: Mon, 14 Sep 2026 08:11:38 +0100
 Subject: [RFC PATCH v4 3/3] ALSA: usb: babyfacepro: add the hardware DSP EQ
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
@@ -22,22 +22,39 @@ fully pinned down; the curve matches closely across the audio band and
 diverges slightly near Nyquist.  That is documented rather than
 hidden.
 
-Assisted-by: DeepSeek V4 Flash
 Signed-off-by: Ismaïl Bahloul <i.bahloul01@gmail.com>
 ---
- sound/usb/babyfacepro/babyfacepro-ctl.c | 540 ++++++++++++++++++++++++
+ sound/usb/babyfacepro/babyfacepro-ctl.c | 575 ++++++++++++++++++++++++
  sound/usb/babyfacepro/babyfacepro.c     |  16 +
- sound/usb/babyfacepro/babyfacepro.h     |  15 +
- 3 files changed, 571 insertions(+)
+ sound/usb/babyfacepro/babyfacepro.h     |  18 +
+ 3 files changed, 609 insertions(+)
 
 diff --git a/sound/usb/babyfacepro/babyfacepro-ctl.c b/sound/usb/babyfacepro/babyfacepro-ctl.c
-index 237025b59..a790abbfb 100644
+index cc9d13be0..73badbb2d 100644
 --- a/sound/usb/babyfacepro/babyfacepro-ctl.c
 +++ b/sound/usb/babyfacepro/babyfacepro-ctl.c
-@@ -2894,10 +2894,296 @@ static const s64 bf_atan_tab[28] = {
+@@ -2903,3 +2903,578 @@ int babyface_create_panel(struct snd_usb_babyface *chip)
  
- /* ---- fixed-point helpers (Q27 in/out, s64 intermediates) ---- */
- 
+ 	return 0;
+ }
++
++#define BF_EQ_Q27		(1 << 27)
++#define BF_EQ_LC_OFF		0x04000000
++#define BF_EQ_BLOCK_LEN		64
++
++/* atan(2^-i) x 2^27 (CORDIC). */
++static const s64 bf_atan_tab[28] = {
++	0x6487ED5, 0x3B58CE1, 0x1F5B760, 0xFEADD5,
++	0x7FD56F, 0x3FFAAB, 0x1FFF55, 0xFFFEB,
++	0x7FFFD, 0x40000, 0x20000, 0x10000,
++	0x8000, 0x4000, 0x2000, 0x1000,
++	0x800, 0x400, 0x200, 0x100,
++	0x80, 0x40, 0x20, 0x10,
++	0x8, 0x4, 0x2, 0x1,
++};
++
++/* ---- fixed-point helpers (Q27 in/out, s64 intermediates) ---- */
++
 +/* sin/cos of an angle in [0, pi/2] (Q27).  Simultaneous CORDIC, 28
 + * iterations (~1e-8 residual).  eq_selftest.c verifies the whole
 + * pipeline against the double-precision reference.
@@ -172,8 +189,8 @@ index 237025b59..a790abbfb 100644
 +	w[4] = (s32)div64_s64(b0 * BF_EQ_Q27 + a0 / 2, a0);
 +}
 +
- /* ---- low cut ---- */
- 
++/* ---- low cut ---- */
++
 +/* Slope byte: 2^n-1 (n poles) -> 6/12/18/24 dB per oct; 0 = off. */
 +static u8 bf_eq_lc_slope_byte(s32 slope_db)
 +{
@@ -214,8 +231,8 @@ index 237025b59..a790abbfb 100644
 +	return (u32)word;
 +}
 +
- /* ---- block build + bulk write ---- */
- 
++/* ---- block build + bulk write ---- */
++
 +static void bf_eq_build_block(u8 *b, int ch, u8 slope,
 +			      const s32 bands[3][4], s32 shared, u32 lc)
 +{
@@ -328,13 +345,19 @@ index 237025b59..a790abbfb 100644
 +		bf_eq_update_strip(chip, strip);
 +}
 +
- /* ---- ALSA controls (4 strips x 19 controls) ---- */
- 
- #define EQ_STRIP(pv)	((pv) >> 8)
-@@ -2911,3 +3197,257 @@ static const char *const bf_eq_type_texts[] = {
- static const char *const bf_eq_slope_texts[] = {
- 	"6 dB/oct", "12 dB/oct", "18 dB/oct", "24 dB/oct", NULL
- };
++/* ---- ALSA controls (4 strips x 19 controls) ---- */
++
++#define EQ_STRIP(pv)	((pv) >> 8)
++#define EQ_PARAM(pv)	((pv) & 0xff)
++/* params: 0 enable, 1-3 type, 4-6 freq, 7-9 q, 10-12 gain, 13 lc freq, 14 lc slope */
++
++static const char *const bf_eq_type_texts[] = {
++	"Off", "Bell", "Low Shelf", "High Shelf", NULL
++};
++
++static const char *const bf_eq_slope_texts[] = {
++	"6 dB/oct", "12 dB/oct", "18 dB/oct", "24 dB/oct", NULL
++};
 +
 +static int bf_eq_info(struct snd_kcontrol *kctl,
 +		      struct snd_ctl_elem_info *uinfo)
@@ -590,10 +613,10 @@ index 237025b59..a790abbfb 100644
 +	return 0;
 +}
 diff --git a/sound/usb/babyfacepro/babyfacepro.c b/sound/usb/babyfacepro/babyfacepro.c
-index b4cfd9268..f7e706a46 100644
+index 7a708342d..14c6ec37c 100644
 --- a/sound/usb/babyfacepro/babyfacepro.c
 +++ b/sound/usb/babyfacepro/babyfacepro.c
-@@ -1096,6 +1096,7 @@ static int babyface_pcm_hw_params(struct snd_pcm_substream *subs,
+@@ -1086,6 +1086,7 @@ static int babyface_pcm_hw_params(struct snd_pcm_substream *subs,
  		chip->alt = r->alt;
  		chip->frame_bytes = r->frame_bytes;
  		/* The DSP EQ coefficients depend on fs: re-upload. */
@@ -601,7 +624,7 @@ index b4cfd9268..f7e706a46 100644
  		dev_dbg(&chip->dev->dev, "rate %u Hz (alt %u)\n",
  			chip->rate, chip->alt);
  	}
-@@ -1430,6 +1431,21 @@ static int babyface_probe(struct usb_interface *intf,
+@@ -1420,6 +1421,21 @@ static int babyface_probe(struct usb_interface *intf,
  		goto error;
  	}
  
@@ -624,10 +647,10 @@ index b4cfd9268..f7e706a46 100644
  	if (err < 0) {
  		dev_err(&intf->dev, "snd_card_register failed: %d\n", err);
 diff --git a/sound/usb/babyfacepro/babyfacepro.h b/sound/usb/babyfacepro/babyfacepro.h
-index 59dd6dac3..f3f4ffbd7 100644
+index bf370d826..b1836924c 100644
 --- a/sound/usb/babyfacepro/babyfacepro.h
 +++ b/sound/usb/babyfacepro/babyfacepro.h
-@@ -343,6 +343,19 @@ struct snd_usb_babyface {
+@@ -348,6 +348,19 @@ struct snd_usb_babyface {
  	u16 fx_send;			/* FX send level 0..0x1000 */
  
  	/* DSP EQ (babyfacepro-ctl.c) - 4 analog-input strips, params kept in state */
@@ -647,10 +670,13 @@ index 59dd6dac3..f3f4ffbd7 100644
  
  	/* front panel (babyfacepro-ctl.c) - 0x17 readback poll */
  	struct delayed_work panel_work;
-@@ -422,6 +435,8 @@ extern const struct bf_source bf_sources[14];
- /* babyfacepro-ctl.c - the DSP EQ (struct snd_usb_babyface is defined above). */
- void bf_eq_band_words(s32 *w, int type, s32 freq_hz, s32 q100,
- 		      s32 gain_x10, s32 fs);
+@@ -424,6 +437,11 @@ const struct bf_rate *bf_rate_lookup(unsigned int rate);
+ extern const u16 bf_flag_cycle[4];
+ extern const struct bf_source bf_sources[14];
+ 
++/* babyfacepro-ctl.c - the DSP EQ (struct snd_usb_babyface is defined above). */
++void bf_eq_band_words(s32 *w, int type, s32 freq_hz, s32 q100,
++		      s32 gain_x10, s32 fs);
 +void bf_eq_reupload(struct snd_usb_babyface *chip);
 +int babyface_create_eq(struct snd_usb_babyface *chip);
  extern const u8 bf_xpoint_block[6];
