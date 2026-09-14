@@ -26,14 +26,31 @@ make LLVM=1 -C /lib/modules/$(uname -r)/build M=$PWD modules
 ## 3. Load it
 
 ```bash
+sudo rmmod snd_usb_babyface_pro                  # see the DKMS note below
 sudo insmod snd-usb-babyface-pro.ko              # default profile
 # low-latency DAW profile (0.33 ms @ 48 kHz, monitoring-grade):
 sudo insmod snd-usb-babyface-pro.ko frames_per_urb=16 nurbs=16
-cat /proc/asound/cards        # expect a card named "BabyfaceProFS"
+cat /proc/asound/cards        # expect a card named "BabyfacePro"
 ```
 
 The card is a normal ALSA device: it appears in PipeWire, and its
 mixer is the regular ALSA control set.
+
+> **If the DKMS package is installed, every reboot silently replaces
+> your hand-built module with the packaged one.** udev loads
+> `/lib/modules/$(uname -r)/updates/dkms/snd-usb-babyface-pro.ko.zst`
+> at boot, so after a reboot you are testing the DKMS build, not
+> whatever you last compiled in `tools/kernel/`, and nothing tells you.
+> This cost a measurement session on 2026-09-14: a whole round of
+> results was collected against a module from days earlier before
+> anyone noticed.
+>
+> Check which one is live before trusting any measurement:
+>
+> ```bash
+> head -2 /proc/asound/cards   # "BabyfacePro" = current, "BabyfaceProFS" = pre-2026-09-13
+> modinfo -F filename snd_usb_babyface_pro   # .../updates/dkms/... = the packaged build
+> ```
 
 ## 4. Stream check (play + record)
 
