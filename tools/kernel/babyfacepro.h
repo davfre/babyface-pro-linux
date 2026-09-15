@@ -32,9 +32,14 @@
  *     16x16.
  *   - The device only advances the stream while BOTH endpoints have a
  *     pending URB - IN and OUT are always submitted as a pair.
- *   - Sample rate = SET_INTERFACE(5, alt) only; the alt is a bandwidth
- *     class (alt 1 = 32/44.1/48/64/88.2 kHz, alt 2 = 96/128 kHz,
- *     alt 3 = 176.4/192 kHz), not a 1:1 rate code.
+ *   - SET_INTERFACE(5, alt) selects single/double/quad speed and USB
+ *     packet capacity; the BASE rate is the family register (request
+ *     0x10, index 0x0030: 32k / 44.1k / 48k family), from which the
+ *     firmware derives its own DDS word.  Three families times three
+ *     speeds give all nine rates.  The 0x1B DDS quad is varispeed: a
+ *     pitch RATIO applied on top of the family rate, sticky until
+ *     rewritten, with the 48 kHz cold-plug quad meaning x1.0.  See
+ *     bf_clock_write / bf_pitch_write.
  */
 
 #include <linux/log2.h>
@@ -57,9 +62,9 @@
 #define BF_EP_OUT			0x01
 #define BF_EP_IN			0x82
 
-#define BF_ALT_1			1	/* 32/44.1/48/64/88.2 kHz, 448-B packets */
-#define BF_ALT_2			2	/* 96/128 kHz, 640-B packets */
-#define BF_ALT_3			3	/* 176.4/192 kHz, 1024-B packets */
+#define BF_ALT_1			1	/* x1: 32/44.1/48 kHz, 448-B packets */
+#define BF_ALT_2			2	/* x2: 64/88.2/96 kHz, 640-B packets */
+#define BF_ALT_3			3	/* x4: 128/176.4/192 kHz, 1024-B packets */
 
 /* Default stream geometry - conservative, matches the RME TotalMix
  * 256-sample buffer.  Both are tunable via module params; the
@@ -127,6 +132,13 @@
 #define BF_REG_LOWMAP_BASE_L		0x0000	/* + idx_l */
 #define BF_REG_LOWMAP_BASE_R		0x001a	/* + idx_r */
 #define BF_REG_KEEPALIVE_SETTINGS	0x05cf
+#define BF_REG_RATE_FAMILY		0x0030	/* family << 4 (bReq 0x10) */
+/* 0x05ff = 0x05cf | 0x0030: the settings word and the family register
+ * written together (measured 2026-09-16: bits 4-5 of the value land in
+ * the family register).  The cold-plug capture writes 0x0021 here, i.e.
+ * family 48 kHz + clock internal - which is why replaying it after a
+ * family write used to reset the rate to 48 kHz.
+ */
 #define BF_REG_KEEPALIVE_INIT		0x05ff
 
 /* Host settings-state word carried by the BF_REG_KEEPALIVE_SETTINGS
@@ -432,6 +444,10 @@ struct bf_rate {
 
 /* Sample-rate / alt classes (babyfacepro.c). */
 const struct bf_rate *bf_rate_lookup(unsigned int rate);
+/* The family register value for a rate: 0 / 1 / 2 for the 32k / 44.1k /
+ * 48k family (rate >> (alt - 1)).
+ */
+unsigned int bf_rate_family(const struct bf_rate *r);
 
 /* -- shared driver state ---------------------- */
 extern const u16 bf_flag_cycle[4];
@@ -448,6 +464,8 @@ extern const struct snd_pcm_hw_constraint_list bf_rates_constraint;
 /* -- babyfacepro.c ------------------------ */
 int bf_vendor_write(struct snd_usb_babyface *chip, u8 req, u16 val, u16 idx);
 int bf_settings_write(struct snd_usb_babyface *chip);
+int bf_clock_write(struct snd_usb_babyface *chip);
+int bf_pitch_write(struct snd_usb_babyface *chip, int pitch);
 int bf_vendor_write_cycle(struct snd_usb_babyface *chip, u8 req, u16 val, u16 idx);
 int bf_vendor_read(struct snd_usb_babyface *chip, u8 req, u16 idx, u8 *buf);
 int bf_cold_init(struct snd_usb_babyface *chip);
