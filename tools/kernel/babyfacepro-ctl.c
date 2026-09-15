@@ -318,6 +318,7 @@ static int bf_master_put(struct snd_kcontrol *kctl,
 	int out = bf_master_out[kctl->private_value];
 	u16 l = ucontrol->value.integer.value[0];
 	u16 r = ucontrol->value.integer.value[1];
+	u16 wire_l, wire_r;
 	u16 flag;
 	int ret = 0;
 
@@ -332,32 +333,33 @@ static int bf_master_put(struct snd_kcontrol *kctl,
 	if (l == chip->master[out][0] && r == chip->master[out][1])
 		goto out;
 
+	wire_l = chip->muted[out] ? 0 : l;
+	wire_r = chip->muted[out] ? 0 : r;
 	flag = bf_flag_cycle[chip->flag_cnt];
 	chip->flag_cnt = (chip->flag_cnt + 1) & 3;
 
 	/* The 8-bit register is the real volume; the 16-bit is its
 	 * companion (kept in sync like TotalMix).
 	 */
-	ret = bf_vendor_write(chip, BF_REQ_GAIN, bf_master_8bit(l),
+	ret = bf_vendor_write(chip, BF_REQ_GAIN, bf_master_8bit(wire_l),
 			      BF_REG_MASTER_8 + 2 * out);
 	if (ret < 0)
 		goto out;
-	ret = bf_vendor_write(chip, BF_REQ_GAIN, bf_master_8bit(r),
+	ret = bf_vendor_write(chip, BF_REQ_GAIN, bf_master_8bit(wire_r),
 			      BF_REG_MASTER_8 + 2 * out + 1);
 	if (ret < 0)
 		goto out;
-	ret = bf_vendor_write(chip, BF_REQ_CROSSPOINT, l,
+	ret = bf_vendor_write(chip, BF_REQ_CROSSPOINT, wire_l,
 			      (BF_REG_MASTER_16 + 2 * out) | flag);
 	if (ret < 0)
 		goto out;
-	ret = bf_vendor_write(chip, BF_REQ_CROSSPOINT, r,
+	ret = bf_vendor_write(chip, BF_REQ_CROSSPOINT, wire_r,
 			      (BF_REG_MASTER_16 + 2 * out + 1) | flag);
 	if (ret < 0)
 		goto out;
 
 	chip->master[out][0] = l;
 	chip->master[out][1] = r;
-	chip->muted[out] = false;
 	/* A Phones change while DIM is engaged re-bases the restore point. */
 	if (chip->dim && out == 1) {
 		chip->dim_saved[0] = l;
