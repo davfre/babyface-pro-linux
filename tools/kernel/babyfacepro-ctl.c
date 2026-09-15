@@ -1871,6 +1871,7 @@ int babyface_create_controls(struct snd_usb_babyface *chip)
 		err = snd_ctl_add(chip->card, kctl);
 		if (err < 0)
 			return err;
+		chip->master_kctl[i] = kctl;
 
 		kctl = snd_ctl_new1(&(struct snd_kcontrol_new){
 			.iface = SNDRV_CTL_ELEM_IFACE_MIXER,
@@ -1885,6 +1886,7 @@ int babyface_create_controls(struct snd_usb_babyface *chip)
 		err = snd_ctl_add(chip->card, kctl);
 		if (err < 0)
 			return err;
+		chip->mute_kctl[i] = kctl;
 
 		dev_dbg(&chip->dev->dev, "output %d = %s\n", i, out_names[i]);
 	}
@@ -2242,6 +2244,12 @@ static void bf_panel_write_master(struct snd_usb_babyface *chip, int out,
 		chip->dim_saved[0] = l;
 		chip->dim_saved[1] = r;
 	}
+	if (chip->master_kctl[out])
+		snd_ctl_notify(chip->card, SNDRV_CTL_EVENT_MASK_VALUE,
+			       &chip->master_kctl[out]->id);
+	if (chip->mute_kctl[out])
+		snd_ctl_notify(chip->card, SNDRV_CTL_EVENT_MASK_VALUE,
+			       &chip->mute_kctl[out]->id);
 }
 
 /* Front-panel OUT wheel, measured on hardware 2026-09-17 with a tone
@@ -2284,6 +2292,9 @@ static void bf_panel_out_wheel_write(struct snd_usb_babyface *chip, int out,
 		chip->dim_saved[0] = l;
 		chip->dim_saved[1] = r;
 	}
+	if (chip->master_kctl[out])
+		snd_ctl_notify(chip->card, SNDRV_CTL_EVENT_MASK_VALUE,
+			       &chip->master_kctl[out]->id);
 }
 
 /* A click that follows the previous one within this gap moves twice as

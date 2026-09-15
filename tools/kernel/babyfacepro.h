@@ -332,6 +332,8 @@ struct snd_usb_babyface {
 					 * instr 0.5 dB/step)
 					 */
 	u8 flag_cnt;			/* 0xc000/0x4000/0x8000/0x0000 */
+	struct snd_kcontrol *master_kctl[6];
+	struct snd_kcontrol *mute_kctl[6];
 	u16 master[6][2];		/* cached 16-bit masters */
 	bool muted[6];
 	u16 dim_saved[2];		/* pre-DIM Phones master (out 1 L/R) */
