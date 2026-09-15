@@ -30,17 +30,27 @@ const u16 bf_flag_cycle[4] = { 0xc000, 0x4000, 0x8000, 0x0000 };
 
 /* -- sample-rate / alt classes -------------------- */
 
-/* The family selector and interface multiplier are independent. */
+/* rate = base << (alt - 1): three DDS bases, three interface speeds.
+ * Measured on hardware, all nine rates.
+ *
+ * 64 kHz is the 32 kHz base at x2, not a 64 kHz base at x1.  Both clock
+ * 64 kHz at pitch 0, but a 64 kHz base on alt 1 needs 64000 x 56 B =
+ * 3584 kB/s, which is exactly alt 1's 448-byte packet ceiling: any
+ * positive varispeed then runs off the end of the bus, and the device
+ * delivers the mirrored rate instead (asked +5 %, got -5 %).  At x2 the
+ * frame is 40 B, so the same 64 kHz costs 2560 kB/s against a 5120 kB/s
+ * ceiling.  Same reasoning puts 128 kHz on alt 3 rather than alt 2.
+ */
 static const struct bf_rate bf_rates[] = {
-	{  32000, BF_ALT_1, 56,  8, 0x0000 },
-	{  44100, BF_ALT_1, 56,  8, 0x0010 },
-	{  48000, BF_ALT_1, 56,  8, 0x0020 },
-	{  64000, BF_ALT_2, 40, 16, 0x0000 },
-	{  88200, BF_ALT_2, 40, 16, 0x0010 },
-	{  96000, BF_ALT_2, 40, 16, 0x0020 },
-	{ 128000, BF_ALT_3, 32, 32, 0x0000 },
-	{ 176400, BF_ALT_3, 32, 32, 0x0010 },
-	{ 192000, BF_ALT_3, 32, 32, 0x0020 },
+	{  32000, BF_ALT_1, 56,  8,  32000 },
+	{  44100, BF_ALT_1, 56,  8,  44100 },
+	{  48000, BF_ALT_1, 56,  8,  48000 },
+	{  64000, BF_ALT_2, 40, 16,  32000 },
+	{  88200, BF_ALT_2, 40, 16,  44100 },
+	{  96000, BF_ALT_2, 40, 16,  48000 },
+	{ 128000, BF_ALT_3, 32, 32,  32000 },
+	{ 176400, BF_ALT_3, 32, 32,  44100 },
+	{ 192000, BF_ALT_3, 32, 32,  48000 },
 };
 
 static const unsigned int bf_rate_list[ARRAY_SIZE(bf_rates)] = {
@@ -105,23 +115,64 @@ int bf_settings_write(struct snd_usb_babyface *chip)
 			       BF_REG_KEEPALIVE_SETTINGS);
 }
 
-/* Select the base-rate family.  SET_INTERFACE selects
- * the multiplier separately.  The Windows 2026-09-14 capture uses
- * 0x0000/0x0010/0x0020 for 32/44.1/48 kHz, followed by the settings
- * word.  Keep the driver's tracked flags rather than copying 0x0441
- * from that user's settings.  DDS programming remains pitch-only.
+/* Program the device clock.  The clock is the 0x1B DDS quad - a PERIOD
+ * in 16.8 fixed point, not a rate register - and SET_INTERFACE scales it
+ * by 1/2/4.  Measured on hardware (all nine rates, 2026-09-15):
+ *
+ *	rate = (48000 * 50000 / DDS_16) << (alt - 1)
+ *
+ * Varispeed uses the same register, so rate and pitch are one expression
+ * and each has to re-apply when the other changes:
+ *
+ *	DDS_24 = round(12800000000 * 48000 / (base * (1000 + pitch)))
+ *
+ * pitch is in 0.1 % steps, so pitch = 0 at base 48000 gives DDS_24 =
+ * 12800000 = the 0xc350/0x8db8/0x8234/0x7cff quad the coldplug capture
+ * has always sent.
+ *
+ * At the 32 kHz base the integer part is 75000 and does not fit bank0's
+ * 16-bit wValue.  Writing its low word anyway still clocks 32 kHz
+ * correctly, because banks 1 and 2 - which stay in range - are what the
+ * device derives the rate from; every one of the nine rates was measured
+ * this way.  bank3 has no effect on the rate at all (22 values tried),
+ * so it stays at its 0 % value.
+ *
+ * The 0x10 write to index 0x0030 this function used to make does
+ * nothing: all three documented values, against two different quads,
+ * produced byte-identical stream rates.
  */
 int bf_clock_write(struct snd_usb_babyface *chip, unsigned int rate)
 {
 	const struct bf_rate *r = bf_rate_lookup(rate);
+	u32 den, dds24, dds_int;
+	u16 frac, b1, b2;
 	int ret;
 
 	if (!r)
 		return -EINVAL;
-	ret = bf_vendor_write(chip, BF_REQ_KEEPALIVE, r->family,
-			      BF_REG_RATE_FAMILY);
+
+	den = r->base * (u32)(1000 + chip->pitch);
+	dds24 = div_u64(12800000000ULL * 48000ULL + den / 2, den);
+	dds_int = dds24 >> 8;
+	frac = dds24 & 0xff;
+	b1 = (u16)div_u64((u64)dds_int * 72562ull + 50000, 100000);
+	b2 = (u16)((dds_int * 2 + 1) / 3);
+
+	ret = bf_vendor_write(chip, BF_REQ_DDS, (u16)dds_int, (frac << 8) | 0);
 	if (ret < 0)
 		return ret;
+	ret = bf_vendor_write(chip, BF_REQ_DDS, b1, 0x0001);
+	if (ret < 0)
+		return ret;
+	ret = bf_vendor_write(chip, BF_REQ_DDS, b2, 0x0002);
+	if (ret < 0)
+		return ret;
+	ret = bf_vendor_write(chip, BF_REQ_DDS, 0x7cff, 0x0003);
+	if (ret < 0)
+		return ret;
+	/* Every quad must be followed by the settings keepalive or it does
+	 * not apply - composed from tracked flags, not hardcoded 0x0001.
+	 */
 	return bf_settings_write(chip);
 }
 
@@ -153,19 +204,10 @@ int bf_cold_init(struct snd_usb_babyface *chip)
 		if (ret < 0)
 			return ret;
 	}
-	/* Original cold-start DDS quads (banked 0x1B). */
-	ret = bf_vendor_write(chip, BF_REQ_DDS, 0xc350, 0x0000);
-	if (ret < 0)
-		return ret;
-	ret = bf_vendor_write(chip, BF_REQ_DDS, 0x8db8, 0xd201);
-	if (ret < 0)
-		return ret;
-	ret = bf_vendor_write(chip, BF_REQ_DDS, 0x8234, 0xd302);
-	if (ret < 0)
-		return ret;
-	ret = bf_vendor_write(chip, BF_REQ_DDS, 0x7cff, 0xf803);
-	if (ret < 0)
-		return ret;
+	/* The clock quad for the active rate and pitch.  At 48 kHz with
+	 * pitch 0 this is byte-identical to the coldplug capture's own
+	 * quad, which is what used to be hardcoded here.
+	 */
 	ret = bf_clock_write(chip, chip->rate);
 	if (ret < 0)
 		return ret;
@@ -286,28 +328,7 @@ int babyface_restore_state(struct snd_usb_babyface *chip)
 			return ret;
 	}
 
-	/* Pitch (the DDS quad) + the clock keepalive. */
-	if (chip->pitch) {
-		u32 dds24 = div_u64(12800000000ULL + (u32)(1000 + chip->pitch) / 2,
-				    1000 + chip->pitch);
-		u16 dds16 = dds24 >> 8;
-		u16 frac = dds24 & 0xff;
-
-		ret = bf_vendor_write(chip, BF_REQ_DDS, dds16, (frac << 8) | 0);
-		if (ret < 0)
-			return ret;
-		ret = bf_vendor_write(chip, BF_REQ_DDS,
-				      (u16)div_u64(dds16 * 72562ull + 50000, 100000), 0x0001);
-		if (ret < 0)
-			return ret;
-		ret = bf_vendor_write(chip, BF_REQ_DDS, (u16)((dds16 * 2 + 1) / 3),
-				      0x0002);
-		if (ret < 0)
-			return ret;
-		ret = bf_vendor_write(chip, BF_REQ_DDS, 0x7cff, 0x0003);
-		if (ret < 0)
-			return ret;
-	}
+	/* One quad carries both the rate and the pitch. */
 	return bf_clock_write(chip, chip->rate);
 }
 
