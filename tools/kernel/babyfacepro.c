@@ -1079,10 +1079,31 @@ static const struct snd_pcm_hardware babyface_pcm_hw = {
 	.periods_max = 16,
 };
 
+/* Is the OTHER direction actually transferring?  Not "is it open": a client
+ * that has the device open but has not started must still be able to pick the
+ * rate, so that an application opening playback and capture before starting
+ * either one can take both to 96 kHz.
+ */
+static bool bf_other_running(struct snd_usb_babyface *chip,
+			     struct snd_pcm_substream *subs)
+{
+	struct snd_pcm_substream *other = READ_ONCE(chip->subs[!subs->stream]);
+	unsigned long flags;
+	bool running;
+
+	if (!other)
+		return false;
+	snd_pcm_stream_lock_irqsave(other, flags);
+	running = snd_pcm_running(other);
+	snd_pcm_stream_unlock_irqrestore(other, flags);
+	return running;
+}
+
 static int babyface_pcm_open(struct snd_pcm_substream *subs)
 {
 	struct snd_usb_babyface *chip = snd_pcm_substream_chip(subs);
 	struct snd_pcm_runtime *rt = subs->runtime;
+	unsigned int locked;
 	unsigned long flags;
 	int ret;
 
@@ -1108,6 +1129,29 @@ static int babyface_pcm_open(struct snd_pcm_substream *subs)
 					   chip->frames_per_urb, 1 << 18);
 	if (ret < 0)
 		return ret;
+
+	/* Both directions share one clock, so while audio is flowing the rate
+	 * belongs to whoever started it.  Offer that rate alone: a client
+	 * arriving later then negotiates down to it, and the sound server
+	 * resamples, rather than the device being retuned underneath a running
+	 * stream.  Advertising the constraint here rather than failing in
+	 * hw_params() is what keeps a PipeWire sink alive - it picks the rate
+	 * on offer instead of asking for one that has to be refused.
+	 *
+	 * This is what the vendor drivers do.  RME's settings panel greys the
+	 * sample rate out during record/playback, and their manual is explicit
+	 * that all active ASIO clients share one rate, with WDM (or CoreAudio)
+	 * doing any conversion - never the driver.
+	 */
+	mutex_lock(&chip->mutex);
+	locked = chip->streaming ? chip->rate : 0;
+	mutex_unlock(&chip->mutex);
+	if (locked) {
+		ret = snd_pcm_hw_constraint_minmax(rt, SNDRV_PCM_HW_PARAM_RATE,
+						   locked, locked);
+		if (ret < 0)
+			return ret;
+	}
 
 	spin_lock_irqsave(&chip->lock, flags);
 	chip->subs[subs->stream] = subs;
@@ -1157,12 +1201,25 @@ static int babyface_pcm_hw_params(struct snd_pcm_substream *subs,
 
 	mutex_lock(&chip->mutex);
 	if (r->rate != chip->rate) {
-		/* Both directions share one clock, so a rate change must not
-		 * race live transfers.  Stop the URBs, re-point the bandwidth
-		 * class and let the stream work restart the session at the
-		 * new rate - the other running substream briefly sees a rate
-		 * step (PipeWire re-negotiates via its resampler) instead of
-		 * this open failing with -EBUSY (which killed the PW sink).
+		/* The constraint in open() normally means nobody asks for a
+		 * rate other than the running one.  It can still happen, when
+		 * this substream was opened before the other one started: the
+		 * constraint is evaluated at open, so it did not apply then.
+		 * Refuse rather than retune - the alternative is a running
+		 * stream silently changing pitch, with no error and no xrun,
+		 * because a negotiated rate is never revised for a live
+		 * substream.
+		 */
+		if (bf_other_running(chip, subs)) {
+			dev_dbg(&chip->dev->dev,
+				"rate %u Hz refused: %u Hz stream running\n",
+				r->rate, chip->rate);
+			ret = -EBUSY;
+			goto out;
+		}
+		/* Nothing is transferring, so the clock is free.  Stop any
+		 * armed URBs, re-point the bandwidth class and let the stream
+		 * work restart the session at the new rate.
 		 */
 		if (chip->streaming)
 			babyface_stream_kill(chip);
