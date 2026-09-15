@@ -334,6 +334,8 @@ struct snd_usb_babyface {
 	u8 flag_cnt;			/* 0xc000/0x4000/0x8000/0x0000 */
 	struct snd_kcontrol *master_kctl[6];
 	struct snd_kcontrol *mute_kctl[6];
+	struct snd_kcontrol *dim_press_kctl;
+	u32 dim_press_count;		/* front-panel DIM presses, wraps */
 	u16 master[6][2];		/* cached 16-bit masters */
 	bool muted[6];
 	u16 dim_saved[2];		/* pre-DIM Phones master (out 1 L/R) */
@@ -513,7 +515,6 @@ int bf_xpoint_write(struct snd_usb_babyface *chip, int out, int src,
 int bf_phase_apply(struct snd_usb_babyface *chip, int mic, bool invert);
 int bf_split_apply(struct snd_usb_babyface *chip, int pb, bool split);
 int bf_trim_apply(struct snd_usb_babyface *chip, int mic, int trim_db2);
-void bf_panel_toggle_dim(struct snd_usb_babyface *chip);
 int bf_preamp_state_write(struct snd_usb_babyface *chip);
 int babyface_create_controls(struct snd_usb_babyface *chip);
 int babyface_create_xpoints(struct snd_usb_babyface *chip);

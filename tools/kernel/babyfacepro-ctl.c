@@ -1389,25 +1389,6 @@ out:
 	return ret;
 }
 
-/* DIM press on the front panel.  The device has no DSP of its own for
- * this, so the host does it, exactly as it already does for the SET
- * button's phantom toggle.
- */
-void bf_panel_toggle_dim(struct snd_usb_babyface *chip)
-{
-	bool on;
-	int ret;
-
-	mutex_lock(&chip->mutex);
-	on = !chip->dim;
-	ret = bf_dim_apply(chip, on);
-	mutex_unlock(&chip->mutex);
-
-	if (ret == 0 && chip->dim_kctl)
-		snd_ctl_notify(chip->card, SNDRV_CTL_EVENT_MASK_VALUE,
-			       &chip->dim_kctl->id);
-}
-
 static int bf_width_info(struct snd_kcontrol *kctl,
 			 struct snd_ctl_elem_info *uinfo)
 {
@@ -1846,6 +1827,25 @@ out:
 	return ret;
 }
 
+static int bf_dim_press_info(struct snd_kcontrol *kctl,
+			     struct snd_ctl_elem_info *uinfo)
+{
+	uinfo->type = SNDRV_CTL_ELEM_TYPE_INTEGER;
+	uinfo->count = 1;
+	uinfo->value.integer.min = 0;
+	uinfo->value.integer.max = 0x7fffffff;
+	return 0;
+}
+
+static int bf_dim_press_get(struct snd_kcontrol *kctl,
+			    struct snd_ctl_elem_value *ucontrol)
+{
+	struct snd_usb_babyface *chip = snd_kcontrol_chip(kctl);
+
+	ucontrol->value.integer.value[0] = READ_ONCE(chip->dim_press_count);
+	return 0;
+}
+
 int babyface_create_controls(struct snd_usb_babyface *chip)
 {
 	static const char * const out_names[6] = {
@@ -1853,6 +1853,19 @@ int babyface_create_controls(struct snd_usb_babyface *chip)
 	};
 	struct snd_kcontrol *kctl;
 	int i, err;
+
+	kctl = snd_ctl_new1(&(struct snd_kcontrol_new){
+		.iface = SNDRV_CTL_ELEM_IFACE_MIXER,
+		.name = "DIM Button Press Count",
+		.access = SNDRV_CTL_ELEM_ACCESS_READ |
+			  SNDRV_CTL_ELEM_ACCESS_VOLATILE,
+		.info = bf_dim_press_info,
+		.get = bf_dim_press_get,
+	}, chip);
+	err = snd_ctl_add(chip->card, kctl);
+	if (err < 0)
+		return err;
+	chip->dim_press_kctl = kctl;
 
 	for (i = 0; i < 6; i++) {
 		kctl = snd_ctl_new1(&(struct snd_kcontrol_new){
@@ -2761,13 +2774,16 @@ static void bf_panel_tick(struct snd_usb_babyface *chip)
 	    chip->panel_prev[3] != BF_PANEL_FLASH_SET)
 		bf_panel_set_phantom(chip);
 
-	/* DIM press: toggle the host-side dim, same host-in-the-loop
-	 * arrangement as SET above.  Decoding the press without acting on
-	 * it made the button look dead with the driver alone.
+	/* DIM is a software-assignable button. Report presses without
+	 * choosing a monitor output or changing any gain in the driver.
 	 */
 	if (st[3] == BF_PANEL_FLASH_DIM &&
-	    chip->panel_prev[3] != BF_PANEL_FLASH_DIM)
-		bf_panel_toggle_dim(chip);
+	    chip->panel_prev[3] != BF_PANEL_FLASH_DIM) {
+		chip->dim_press_count = (chip->dim_press_count + 1) & 0x7fffffff;
+		if (chip->dim_press_kctl)
+			snd_ctl_notify(chip->card, SNDRV_CTL_EVENT_MASK_VALUE,
+				       &chip->dim_press_kctl->id);
+	}
 
 	/* MIX (fader mode) - HOST-latched, like TotalMix (cap_mix.pcap,
 	 * cap_select2.pcap): the raw press readback is `0D 0D 41 44` -
