@@ -310,6 +310,10 @@ struct snd_usb_babyface {
 					 * instr 0.5 dB/step)
 					 */
 	u8 flag_cnt;			/* 0xc000/0x4000/0x8000/0x0000 */
+	struct snd_kcontrol *master_kctl[6];
+	struct snd_kcontrol *mute_kctl[6];
+	struct snd_kcontrol *dim_press_kctl;
+	u32 dim_press_count;
 	u16 master[6][2];		/* cached 16-bit masters */
 	bool muted[6];
 	u16 dim_saved[2];		/* pre-DIM Phones master (out 1 L/R) */
@@ -391,6 +395,9 @@ struct snd_usb_babyface {
 					 * gesture; a tap flashes only ~100-150 ms,
 					 * selhold_probe2 - no engaged bit)
 					 */
+	/* Preserve sub-integer volume progress between OUT wheel polls. */
+	u16 panel_master_last[6][2];
+	s16 panel_master_remainder[6][2];
 	u16 panel_mix_raw;		/* MIX-mode monitoring level (fader raw) */
 	u8 panel_mix_disp[4];		/* MIX-mode VU display shadow per mic
 					 * (0x1A 0x000A+mic - written on change
