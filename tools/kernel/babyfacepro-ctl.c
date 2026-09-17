@@ -2240,8 +2240,8 @@ static void bf_panel_mix_wheel(struct snd_usb_babyface *chip, int delta)
 }
 
 /* Write an output's L/R masters (8-bit companions + 16-bit with the
- * transaction flag) and mirror into the cache - shared by the OUT
- * volume wheel and the balance wheel.  Caller holds the mutex.
+ * transaction flag) and mirror into the cache - used by the balance
+ * wheel.  Caller holds the mutex.
  */
 static void bf_panel_write_master(struct snd_usb_babyface *chip, int out,
 				  u16 l, u16 r)
@@ -2268,14 +2268,51 @@ static void bf_panel_write_master(struct snd_usb_babyface *chip, int out,
 	}
 }
 
-/* OUT-mode wheel: the master fader of the OUT-selected output, +/-0.5 dB
- * per click (cap_set2/cap_dim.pcap: the wheel writes the 16-bit master
- * 0x03E0+2*out on the master curve 0x2000*2^(dB/6); the driver keeps
- * the 8-bit companion in sync like bf_master_put - the 8-bit is the
- * real volume).  BOTH sides move by the same dB so an existing
- * balance (hold-SELECT) is preserved.  Same output mapping as the MIX
- * wheel (Phones = canon 1, Opt = ADAT7/8 = canon 5, else AN1/2).
+/* Front-panel OUT wheel, measured on hardware 2026-09-17 with a tone
+ * looped from the headphone output into IN3:
+ *
+ *  - The firmware moves an analog output's level by itself when the
+ *    wheel turns, 1 dB per click, with its own ~12 ms smoothing, even
+ *    when the host writes nothing.
+ *  - A host write to the 8-bit master (the analog gain) overrides that.
+ *    Writing it on every poll from the host's own count made the level
+ *    saw-tooth by 1-3 dB while turning, heard as heavy zipper noise.
+ *  - The 16-bit master does not affect the analog level, but it is the
+ *    digital outputs' level.  TotalMix writes only the 16-bit during a
+ *    wheel gesture (PROTOCOL.md, cap_dim).
+ *
+ * So the wheel writes only the 16-bit, in 1 dB steps to match the
+ * firmware, and updates the cache so the ALSA controls read the new
+ * level.  A muted output stays muted: only the cache moves.  BOTH
+ * sides move by the same dB so an existing balance (hold-SELECT) is
+ * preserved.  Same output mapping as the MIX wheel (Phones = canon 1,
+ * Opt = ADAT7/8 = canon 5, else AN1/2).
  */
+static void bf_panel_out_wheel_write(struct snd_usb_babyface *chip, int out,
+				     u16 l, u16 r)
+{
+	u16 flag;
+
+	if (!chip->muted[out]) {
+		flag = bf_flag_cycle[chip->flag_cnt];
+		chip->flag_cnt = (chip->flag_cnt + 1) & 3;
+		bf_vendor_write(chip, BF_REQ_CROSSPOINT, l,
+				(BF_REG_MASTER_16 + 2 * out) | flag);
+		bf_vendor_write(chip, BF_REQ_CROSSPOINT, r,
+				(BF_REG_MASTER_16 + 2 * out + 1) | flag);
+	}
+	chip->master[out][0] = l;
+	chip->master[out][1] = r;
+	/* A Phones change while DIM is engaged re-bases the restore. */
+	if (chip->dim && out == 1) {
+		chip->dim_saved[0] = l;
+		chip->dim_saved[1] = r;
+	}
+}
+
+/* One wheel click, in half-dB: the firmware's analog step is 1 dB. */
+#define BF_OUT_WHEEL_STEP	2
+
 static void bf_panel_out_wheel(struct snd_usb_babyface *chip, int delta)
 {
 	int out = chip->panel_out == 3 ? 5 :
@@ -2284,11 +2321,13 @@ static void bf_panel_out_wheel(struct snd_usb_babyface *chip, int delta)
 	u16 l, r;
 
 	mutex_lock(&chip->mutex);
-	hl = bf_master_half_db(chip->master[out][0]) + delta;
-	hr = bf_master_half_db(chip->master[out][1]) + delta;
+	hl = bf_master_half_db(chip->master[out][0]) +
+	     delta * BF_OUT_WHEEL_STEP;
+	hr = bf_master_half_db(chip->master[out][1]) +
+	     delta * BF_OUT_WHEEL_STEP;
 	l = bf_master_16bit(clamp(hl, -128, 12));
 	r = bf_master_16bit(clamp(hr, -128, 12));
-	bf_panel_write_master(chip, out, l, r);
+	bf_panel_out_wheel_write(chip, out, l, r);
 	mutex_unlock(&chip->mutex);
 }
 
