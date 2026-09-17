@@ -1,0 +1,130 @@
+From f32711b646c7724daa56caaad5a99fb09830c128 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Isma=C3=AFl=20Bahloul?= <i.bahloul01@gmail.com>
+Date: Thu, 17 Sep 2026 17:44:56 +0100
+Subject: [RFC PATCH v5 0/8] ALSA: usb: add RME Babyface Pro driver (proprietary mode)
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Hi Takashi,
+
+This is v5, re-split per your v4 review: still too coarse, start with
+a minimalistic core (probe/disconnect/PCM only), add mixers
+piece-by-piece, suspend/resume near the end, and add proper "big
+picture" documentation for human reviewers.
+
+No functional change from v4 - this series is a pure restructuring of
+the same driver into 8 patches instead of 3, plus a new documentation
+patch. Every patch was built in-tree on its own against next-20260911
+and is checkpatch --strict clean (the same two false positives noted
+in v4, `ang` x2 and BIT() vs (1 << 27) in the EQ patch, still apply
+and are still declined for the same reason: BIT() returns unsigned
+long, wrong for that file's signed Q27 fixed-point math).
+
+How this v5 is split, and why:
+
+ 1. Core: probe, disconnect, PCM stream only. No mixer, no front
+    panel, no DSP EQ, no suspend/resume. This alone is a working
+    (if silent, no routing yet) capture/playback driver.
+
+ 2. Output masters + the crosspoint routing matrix, together: a
+    driver with masters but no routing would still be silent, since
+    the factory-default routing this patch also adds is what actually
+    connects a source to an output. This is the first patch that
+    produces controllable, audible output.
+
+ 3. Mic preamp: phantom power, pad, instrument ref level, the four
+    gains, plus phase/stereo-split/trim (input-strip controls layered
+    on the crosspoint registers the previous patch introduced).
+
+ 4. Routing flags and varispeed pitch, together: loopback, AN 1>2,
+    sample clock source, AN1/2 link, MS processor, DIM, width, FX
+    send, and pitch. These started life as one function registering
+    all of them in a single pass; splitting pitch out on its own would
+    have meant an artificial function split with no real benefit.
+
+ 5. S3 suspend/resume.
+
+ 6. The front-panel poll and controls (buttons, wheel, IN/OUT/SELECT,
+    MIX, DIM) plus the host-side emulation of TotalMix's own role for
+    the wheel/button behaviour.
+
+ 7. The hardware 3-band + low-cut DSP EQ.
+
+ 8. A new documentation patch (Documentation/sound/cards/
+    babyface-pro.rst): why the proprietary mode needs a standalone
+    driver, the vendor protocol's write-only/no-readback shape, the
+    asynchronous stream model, why mixer state has to be cached and
+    replayed, and why the driver emulates TotalMix for the front
+    panel. This is meant to give a reviewer the big picture before
+    reading patches 1-7, not to restate what their own commit messages
+    and code comments already cover.
+
+Two places needed real judgement calls rather than a mechanical split
+along control names, both explained above and in the affected patches'
+own commit messages: masters+crosspoint (patch 2) and flags+pitch
+(patch 4) are each one patch instead of further split, because the
+underlying code was never separable along those lines without
+inventing an artificial seam - the same reasoning v4's own cover
+letter gave for not re-splitting the core+mixer patch further at the
+time.
+
+Known limitations, unchanged from v4:
+
+ - USB autosuspend is not supported, explicitly disabled at probe.
+   S3 suspend/resume works and is tested.
+
+ - A few protocol details remain open (documented, not blocking): the
+   preamp readback index semantics, a width strip-ownership edge case,
+   whether DIM's scope is reassignable with TotalMix's Main Out
+   setting, and the exact high-frequency warping of the EQ
+   coefficients against the vendor curve.
+
+ - The latency profile (frames_per_urb, nurbs) is a module parameter,
+   not runtime-reconfigurable.
+
+Validation: the same full-duplex rate x period sweep, start/stop
+stress, mixer-restore-across-unbind/rebind and mid-stream-disconnect
+regression suite as v4, run against the final tree - 40 of 40. Each of
+the 8 patches was additionally checked out on its own and built
+in-tree, to confirm the split itself introduces no broken intermediate
+state.
+
+Disclosure: as with previous versions, the reverse-engineering and
+substantial portions of the kernel implementation were written with
+heavy assistance from AI coding assistants. All of it was verified by
+hand on real hardware; the human authors remain responsible for the
+result via Signed-off-by.
+
+Thanks for reading,
+Ismaïl
+
+Ismaïl Bahloul (8):
+  ALSA: usb: add RME Babyface Pro driver core (probe, PCM stream)
+  ALSA: usb: babyfacepro: add output masters and crosspoint routing
+  ALSA: usb: babyfacepro: add mic preamp, phantom/pad and input trim
+  ALSA: usb: babyfacepro: add routing flags and varispeed pitch
+  ALSA: usb: babyfacepro: add S3 suspend/resume
+  ALSA: usb: babyfacepro: add the front-panel poll and controls
+  ALSA: usb: babyfacepro: add the hardware DSP EQ
+  Documentation: sound: add the Babyface Pro proprietary-mode design doc
+
+ Documentation/sound/cards/babyface-pro.rst |  161 +
+ Documentation/sound/cards/index.rst        |    1 +
+ MAINTAINERS                                |    6 +
+ sound/usb/Kconfig                          |   20 +
+ sound/usb/Makefile                         |    2 +-
+ sound/usb/babyfacepro/Makefile             |    4 +
+ sound/usb/babyfacepro/babyfacepro-ctl.c    | 3585 ++++++++++++++++++++
+ sound/usb/babyfacepro/babyfacepro.c        | 1546 +++++++++
+ sound/usb/babyfacepro/babyfacepro.h        |  483 +++
+ 9 files changed, 5807 insertions(+), 1 deletion(-)
+ create mode 100644 Documentation/sound/cards/babyface-pro.rst
+ create mode 100644 sound/usb/babyfacepro/Makefile
+ create mode 100644 sound/usb/babyfacepro/babyfacepro-ctl.c
+ create mode 100644 sound/usb/babyfacepro/babyfacepro.c
+ create mode 100644 sound/usb/babyfacepro/babyfacepro.h
+
+-- 
+2.55.0
+

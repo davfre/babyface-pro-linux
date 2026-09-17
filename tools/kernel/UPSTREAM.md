@@ -502,3 +502,54 @@ sh tools/kernel/regress.sh --dur 1 --mixer-restore --disconnect-test
 # style
 /lib/modules/$(uname -r)/build/scripts/checkpatch.pl --no-tree --file <file>
 ```
+
+## v5 - RE-SPLIT 2026-09-17 (Takashi's v4 review: still too coarse) - READY, pending explicit go-ahead
+
+Takashi's reply to v4 (2026-09-16): the 3-patch split is still too coarse
+to review. Asked for a minimalistic core (probe/disconnect/PCM only, no
+mixer), mixers added piece-by-piece, suspend/resume near the end, and
+proper "big picture" documentation for human reviewers, not AI.
+
+No functional change from v4 - this is a pure restructuring, verified by
+diffing the final cumulative tree against the actual v4 source: identical
+function set (modulo the deliberate splits below), +31 lines out of 5583
+(explanatory comments only).
+
+8 patches instead of 3, built and `checkpatch --strict` clean individually
+against `next-20260911` at every step:
+
+1. Core: probe/disconnect/PCM stream only.
+2. Output masters + crosspoint matrix (kept together - a driver with
+   masters but no routing would still be silent, since the factory
+   default routing this patch also adds is what makes it audible).
+3. Mic preamp + phantom/pad/instrument-ref-level + phase/split/trim.
+4. Routing flags + varispeed pitch (kept together - the source function
+   that created them registered all of them in one pass; splitting pitch
+   out alone would have meant an artificial function split).
+5. S3 suspend/resume.
+6. Front-panel poll + controls.
+7. Hardware DSP EQ.
+8. New: `Documentation/sound/cards/babyface-pro.rst`, the big-picture doc
+   Takashi asked for.
+
+David Fredman's contributed fixes (the DMA flag, the crosspoint low-map
+write, the mic gain packed coarse/fine decode) now land in three different
+patches (1, 2, 3) instead of the single v4 patch 1 they used to share, so
+his `Co-developed-by`/`Signed-off-by` trailers were copied onto all three
+rather than just one.
+
+One real, pre-existing gap found and flagged (not fixed - out of scope for
+a pure restructuring pass): `babyface_resume()` calls
+`babyface_restore_state()` but not `bf_state_apply_flags()`, unlike
+`bf_state_restore()` which calls both - so loopback/AN1>2/link/MS/DIM/
+width/FX-send/pitch likely don't survive an S3 resume correctly, even
+though the masters/crosspoint/preamp state does. Worth a follow-up patch
+of its own; not touched here.
+
+No `Assisted-by:` trailers on the individual patches this time (dropped
+per instruction) - the general AI-assistance disclosure paragraph stays
+in the cover letter only, same as v4's own disclosure.
+
+Patches: `patches/v5-0000-cover-letter.patch` through
+`patches/v5-0008-*.patch`. Not sent - same rule as always, explicit
+go-ahead required first.

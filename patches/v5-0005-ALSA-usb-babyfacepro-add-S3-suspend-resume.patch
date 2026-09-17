@@ -1,0 +1,90 @@
+From 0b7995cff20d1484944be5435820b57a92cd9ad3 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Isma=C3=AFl=20Bahloul?= <i.bahloul01@gmail.com>
+Date: Wed, 16 Sep 2026 21:56:19 +0100
+Subject: [RFC PATCH v5 5/8] ALSA: usb: babyfacepro: add S3 suspend/resume
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Kills the stream and lets the PCM core suspend substreams (apps get
+-ESTRPIPE and restart) on suspend; resume re-runs the cold init and
+replays the cached mixer state.  Front-panel poll start/stop around
+suspend is added by the front-panel patch, once that poll exists.
+
+USB autosuspend itself is out of scope (already disabled at probe in
+the first patch of this series) - this is S3 system sleep only.
+
+Signed-off-by: Ismaïl Bahloul <i.bahloul01@gmail.com>
+---
+ sound/usb/babyfacepro/babyfacepro.c | 48 +++++++++++++++++++++++++++++
+ 1 file changed, 48 insertions(+)
+
+diff --git a/sound/usb/babyfacepro/babyfacepro.c b/sound/usb/babyfacepro/babyfacepro.c
+index 3531240af..99112060b 100644
+--- a/sound/usb/babyfacepro/babyfacepro.c
++++ b/sound/usb/babyfacepro/babyfacepro.c
+@@ -1438,6 +1438,52 @@ static void babyface_disconnect(struct usb_interface *intf)
+ 	snd_card_free_when_closed(chip->card);
+ }
+ 
++static int babyface_suspend(struct usb_interface *intf, pm_message_t message)
++{
++	struct snd_usb_babyface *chip = usb_get_intfdata(intf);
++
++	struct snd_device *sdev;
++
++	if (!chip)
++		return 0;
++	list_for_each_entry(sdev, &chip->card->devices, list) {
++		if (sdev->type == SNDRV_DEV_PCM)
++			snd_pcm_suspend_all(sdev->device_data);
++	}
++	cancel_work_sync(&chip->stream_work);
++	mutex_lock(&chip->mutex);
++	if (chip->streaming)
++		babyface_stream_kill(chip);
++	mutex_unlock(&chip->mutex);
++	return 0;
++}
++
++static int babyface_resume(struct usb_interface *intf)
++{
++	struct snd_usb_babyface *chip = usb_get_intfdata(intf);
++	int err;
++
++	if (!chip)
++		return 0;
++
++	/* The device lost its state across the suspend; re-run the cold
++	 * init and re-apply the cached mixer state.  Suspended PCM
++	 * substreams are woken by the core - apps get -ESTRPIPE and
++	 * restart (the trigger re-arms the stream).
++	 */
++	mutex_lock(&chip->mutex);
++	err = usb_set_interface(chip->dev, BF_IFACE, chip->alt);
++	if (err < 0)
++		goto out;
++	err = bf_cold_init(chip);
++	if (err < 0)
++		goto out;
++	err = babyface_restore_state(chip);
++out:
++	mutex_unlock(&chip->mutex);
++	return err;
++}
++
+ static const struct usb_device_id babyface_ids[] = {
+ 	{ USB_DEVICE(USB_VENDOR_RME, USB_PRODUCT_BABYFACE_PRO_FS) },
+ 	{ }
+@@ -1448,6 +1494,8 @@ static struct usb_driver babyface_driver = {
+ 	.name = "snd-usb-babyface-pro",
+ 	.probe = babyface_probe,
+ 	.disconnect = babyface_disconnect,
++	.suspend = babyface_suspend,
++	.resume = babyface_resume,
+ 	.id_table = babyface_ids,
+ };
+ 
+-- 
+2.55.0
+
