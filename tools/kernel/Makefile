@@ -17,10 +17,12 @@
 # For the upstream integration, this Makefile is merged into
 # sound/usb/Makefile as:
 #
-#   snd-usb-babyface-pro-objs := babyfacepro.o babyfacepro-ctl.o
+#   snd-usb-babyface-pro-objs := babyfacepro.o babyfacepro-ctl.o \
+#                                babyfacepro-meter.o
 #   obj-$(CONFIG_SND_USB_BABYFACE_PRO) += snd-usb-babyface-pro.o
 #
 # and Kconfig gains a `config SND_USB_BABYFACE_PRO` entry (see Kconfig).
 
 obj-m := snd-usb-babyface-pro.o
-snd-usb-babyface-pro-objs := babyfacepro.o babyfacepro-ctl.o
+snd-usb-babyface-pro-objs := babyfacepro.o babyfacepro-ctl.o \
+			     babyfacepro-meter.o

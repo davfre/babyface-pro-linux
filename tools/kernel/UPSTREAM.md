@@ -48,9 +48,12 @@ clean file-boundary patch split, see item 1 below).
 - `babyfacepro-ctl.c` — ALSA control surface: mixer (masters, preamp,
   gains, crosspoints, flags, pitch, loopback…), front-panel readback
   poll + controls, hardware DSP EQ
+- `babyfacepro-meter.c` — level meters: peak/RMS/over accumulators fed
+  from the URB completion handlers, read through read-only volatile PCM
+  controls (drain on read)
 - `babyfacepro.h` — shared state + register map
 - `Makefile` — `snd-usb-babyface-pro-y := babyfacepro.o
-  babyfacepro-ctl.o` + `obj-$(CONFIG_SND_USB_BABYFACE_PRO) +=
+  babyfacepro-ctl.o babyfacepro-meter.o` + `obj-$(CONFIG_SND_USB_BABYFACE_PRO) +=
   snd-usb-babyface-pro.o` (copy of `sound/usb/caiaq/Makefile`'s
   pattern)
 
