@@ -37,6 +37,7 @@
  *     alt 3 = 176.4/192 kHz), not a 1:1 rate code.
  */
 
+#include <linux/ktime.h>
 #include <linux/log2.h>
 #include <linux/module.h>
 #include <linux/mutex.h>
@@ -400,6 +401,20 @@ struct snd_usb_babyface {
 					 * gesture; a tap flashes only ~100-150 ms,
 					 * selhold_probe2 - no engaged bit)
 					 */
+	/* The OUT wheel's own level per side, in half-dB, valid while the
+	 * master still holds the value the wheel last wrote (the 16-bit
+	 * value can't hold every half-dB step, nor the device's range
+	 * below -64 dB, nor its mute).  0xffff = nothing written yet.
+	 */
+	u16 panel_master_last[6][2];
+	s16 panel_out_hdb[6][2];
+	/* OUT wheel acceleration and resync at rest (babyfacepro-ctl.c) */
+	ktime_t panel_out_wheel_t;	/* estimated time of the last count */
+	ktime_t panel_poll_t;		/* when the previous poll ran */
+	unsigned long panel_fast_until;	/* jiffies: poll fast until then */
+	int panel_out_wheel_dir;	/* its direction, +1 or -1 */
+	int panel_out_wheel_out;	/* the output it moved */
+	bool panel_out_resync;		/* 8-bit write due once at rest */
 	u16 panel_mix_raw;		/* MIX-mode monitoring level (fader raw) */
 	u8 panel_mix_disp[4];		/* MIX-mode VU display shadow per mic
 					 * (0x1A 0x000A+mic - written on change

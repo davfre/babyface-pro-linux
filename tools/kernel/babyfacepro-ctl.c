@@ -2240,8 +2240,8 @@ static void bf_panel_mix_wheel(struct snd_usb_babyface *chip, int delta)
 }
 
 /* Write an output's L/R masters (8-bit companions + 16-bit with the
- * transaction flag) and mirror into the cache - shared by the OUT
- * volume wheel and the balance wheel.  Caller holds the mutex.
+ * transaction flag) and mirror into the cache - used by the balance
+ * wheel.  Caller holds the mutex.
  */
 static void bf_panel_write_master(struct snd_usb_babyface *chip, int out,
 				  u16 l, u16 r)
@@ -2268,27 +2268,235 @@ static void bf_panel_write_master(struct snd_usb_babyface *chip, int out,
 	}
 }
 
-/* OUT-mode wheel: the master fader of the OUT-selected output, +/-0.5 dB
- * per click (cap_set2/cap_dim.pcap: the wheel writes the 16-bit master
- * 0x03E0+2*out on the master curve 0x2000*2^(dB/6); the driver keeps
- * the 8-bit companion in sync like bf_master_put - the 8-bit is the
- * real volume).  BOTH sides move by the same dB so an existing
- * balance (hold-SELECT) is preserved.  Same output mapping as the MIX
- * wheel (Phones = canon 1, Opt = ADAT7/8 = canon 5, else AN1/2).
+/* Front-panel OUT wheel, measured on hardware 2026-09-17 with a tone
+ * looped from the headphone output into IN3/IN4:
+ *
+ *  - The firmware moves an analog output's level by itself when the
+ *    wheel turns, with its own ~12 ms smoothing, even when the host
+ *    writes nothing.  See bf_out_wheel_step() for the step size.
+ *  - A host write to the 8-bit master (the analog gain) overrides that.
+ *    Writing it on every poll from the host's own count made the level
+ *    saw-tooth by 1-3 dB while turning, heard as heavy zipper noise.
+ *  - The 16-bit master does not affect the analog level, but it is the
+ *    digital outputs' level.  TotalMix writes only the 16-bit during a
+ *    wheel gesture, and the 8-bit once the wheel is at rest.
+ *
+ * So while the wheel turns, only the 16-bit is written, and the cache
+ * follows the firmware's own count so the ALSA controls read the real
+ * level.  A muted output stays muted: only the cache moves.  Both
+ * sides move by the louder side's step, so a balance (hold-SELECT) is
+ * kept.  Same output mapping as the MIX wheel (Phones = canon 1,
+ * Opt = ADAT7/8 = canon 5, else AN1/2).
  */
+static void bf_panel_out_wheel_write(struct snd_usb_babyface *chip, int out,
+				     u16 l, u16 r)
+{
+	u16 flag;
+
+	if (!chip->muted[out]) {
+		flag = bf_flag_cycle[chip->flag_cnt];
+		chip->flag_cnt = (chip->flag_cnt + 1) & 3;
+		bf_vendor_write(chip, BF_REQ_CROSSPOINT, l,
+				(BF_REG_MASTER_16 + 2 * out) | flag);
+		bf_vendor_write(chip, BF_REQ_CROSSPOINT, r,
+				(BF_REG_MASTER_16 + 2 * out + 1) | flag);
+	}
+	chip->master[out][0] = l;
+	chip->master[out][1] = r;
+	/* A Phones change while DIM is engaged re-bases the restore. */
+	if (chip->dim && out == 1) {
+		chip->dim_saved[0] = l;
+		chip->dim_saved[1] = r;
+	}
+}
+
+/* A click that follows the previous one within this gap moves twice as
+ * far.  In the recordings the firmware doubled clicks up to 58 ms apart
+ * and not from 67 ms.  A normal poll every ~21 ms can't tell those
+ * apart, so after an OUT wheel click the panel is polled every
+ * BF_PANEL_FAST_POLL_MS for BF_PANEL_FAST_HOLD_MS, and each click is
+ * dated at the middle of the interval it was seen in.  A wrong guess is
+ * fixed by the resync at rest below.
+ */
+#define BF_OUT_WHEEL_ACCEL_MS	62
+#define BF_PANEL_FAST_POLL_MS	5
+#define BF_PANEL_FAST_HOLD_MS	200
+
+/* Quiet time after the last click before the resync write. */
+#define BF_OUT_WHEEL_RESYNC_MS	150
+
+/* The device's own OUT wheel range: below -90 dB a side is muted.
+ * BF_OUT_WHEEL_MUTED is where a muted louder side is kept.
+ */
+#define BF_OUT_WHEEL_FLOOR	(-180)		/* half-dB */
+#define BF_OUT_WHEEL_MUTED	(BF_OUT_WHEEL_FLOOR - 1)
+/* Lowest level the 8-bit master is known to take (BF_MASTER_8_MIN). */
+#define BF_OUT_WHEEL_8BIT_MIN	(BF_MASTER_8_MIN - BF_MASTER_8_0DB)
+
+/**
+ * bf_out_wheel_step - the firmware's OUT wheel step, in half-dB
+ * @half_db: the louder side's level before the click, in half-dB
+ *
+ * Measured on the headphone output (a tone looped into IN3/IN4, the
+ * driver writing nothing):
+ *
+ *	-9.5 dB and up		0.5 dB per click
+ *	-10 to -25.5 dB		1 dB
+ *	-26 to -41.5 dB		1.5 dB
+ *	-42 to -57.5 dB		2 dB
+ *	-58 dB and down		3 dB
+ *
+ * A fast click moves twice as far.  Both sides move by the step of the
+ * louder one, so a balance is kept.
+ */
+static int bf_out_wheel_step(int half_db)
+{
+	if (half_db >= -19)
+		return 1;
+	if (half_db >= -51)
+		return 2;
+	if (half_db >= -83)
+		return 3;
+	if (half_db >= -115)
+		return 4;
+	return 6;
+}
+
+/* The wheel's view of one side: its own tracked level while the master
+ * is still what the wheel wrote, else the master's level.
+ */
+static int bf_out_wheel_level(struct snd_usb_babyface *chip, int out, int ch)
+{
+	u16 raw = chip->master[out][ch];
+
+	if (raw == chip->panel_master_last[out][ch])
+		return chip->panel_out_hdb[out][ch];
+	if (!raw)
+		return BF_OUT_WHEEL_MUTED;
+	return bf_master_half_db(raw);
+}
+
+/* One click on both sides.  They move together, so a balance is kept.
+ * When the louder side would go below the floor, both stop there and the
+ * louder side mutes; from mute, turning up continues from the floor
+ * (-90 dB up one step is -87).  A quieter side below the floor is muted
+ * but keeps its offset, so the balance comes back as the level rises.
+ */
+static void bf_out_wheel_click(int db[2], int step)
+{
+	int louder = max(db[0], db[1]);
+	int shift = step;
+
+	if (louder < BF_OUT_WHEEL_FLOOR) {
+		if (step < 0)
+			return;
+		shift = BF_OUT_WHEEL_FLOOR - louder + step;
+	} else if (louder + step < BF_OUT_WHEEL_FLOOR) {
+		shift = BF_OUT_WHEEL_MUTED - louder;
+	} else if (louder + step > 12) {
+		shift = 12 - louder;
+	}
+	db[0] += shift;
+	db[1] += shift;
+}
+
 static void bf_panel_out_wheel(struct snd_usb_babyface *chip, int delta)
 {
 	int out = chip->panel_out == 3 ? 5 :
 		  chip->panel_out == 2 ? 1 : 0;
-	int hl, hr;
-	u16 l, r;
+	int dir = delta > 0 ? 1 : -1;
+	int clicks = abs(delta);
+	ktime_t now = ktime_get();
+	bool fast;
+	int ch, i, step, louder;
+	int db[2];
+	u16 next[2];
+
+	chip->panel_fast_until = jiffies +
+				 msecs_to_jiffies(BF_PANEL_FAST_HOLD_MS);
+	/* The click came some time since the previous poll: take the
+	 * middle.  Clicks after the first in this poll came within one
+	 * interval, so only the first can be slow.  A reversal starts a
+	 * new turn.
+	 */
+	if (chip->panel_poll_t)
+		now = ktime_sub(now,
+				ktime_divns(ktime_sub(now, chip->panel_poll_t), 2));
 
 	mutex_lock(&chip->mutex);
-	hl = bf_master_half_db(chip->master[out][0]) + delta;
-	hr = bf_master_half_db(chip->master[out][1]) + delta;
-	l = bf_master_16bit(clamp(hl, -128, 12));
-	r = bf_master_16bit(clamp(hr, -128, 12));
-	bf_panel_write_master(chip, out, l, r);
+	fast = chip->panel_out_wheel_t &&
+	       dir == chip->panel_out_wheel_dir &&
+	       out == chip->panel_out_wheel_out &&
+	       ktime_ms_delta(now, chip->panel_out_wheel_t) <
+	       BF_OUT_WHEEL_ACCEL_MS;
+	for (ch = 0; ch < 2; ch++)
+		db[ch] = bf_out_wheel_level(chip, out, ch);
+	for (i = 0; i < clicks; i++) {
+		/* Muted, the louder side counts as the floor. */
+		louder = max3(db[0], db[1], BF_OUT_WHEEL_FLOOR);
+		step = dir * bf_out_wheel_step(louder);
+		if (fast || i)
+			step *= 2;
+		bf_out_wheel_click(db, step);
+	}
+	for (ch = 0; ch < 2; ch++)
+		next[ch] = db[ch] < BF_OUT_WHEEL_FLOOR ? 0 :
+			   bf_master_16bit(db[ch]);
+	bf_panel_out_wheel_write(chip, out, next[0], next[1]);
+	for (ch = 0; ch < 2; ch++) {
+		chip->panel_master_last[out][ch] = next[ch];
+		chip->panel_out_hdb[out][ch] = db[ch];
+	}
+	chip->panel_out_wheel_t = now;
+	chip->panel_out_wheel_dir = dir;
+	chip->panel_out_wheel_out = out;
+	chip->panel_out_resync = true;
+	mutex_unlock(&chip->mutex);
+}
+
+/* Once the wheel has rested, write the wheel's level to the 8-bit (and
+ * 16-bit) master, as TotalMix does at the end of a gesture.  The level
+ * already follows the firmware's step rule, so this normally changes
+ * nothing audible.  It fixes the rare click whose speed the driver
+ * guessed wrong: one zone step per such click, smoothed by the
+ * firmware.  Nothing is written below -64 dB, where the 8-bit codes the
+ * device takes are unknown, nor after a mixer application has set the
+ * master since (that write already set the device).
+ */
+static void bf_panel_out_resync(struct snd_usb_babyface *chip)
+{
+	int out, ch;
+	int db[2];
+	u16 flag;
+
+	if (!chip->panel_out_resync ||
+	    ktime_ms_delta(ktime_get(), chip->panel_out_wheel_t) <
+	    BF_OUT_WHEEL_RESYNC_MS)
+		return;
+
+	mutex_lock(&chip->mutex);
+	chip->panel_out_resync = false;
+	out = chip->panel_out_wheel_out;
+	for (ch = 0; ch < 2; ch++) {
+		if (chip->master[out][ch] != chip->panel_master_last[out][ch])
+			goto unlock;
+		db[ch] = chip->panel_out_hdb[out][ch];
+		if (db[ch] < BF_OUT_WHEEL_8BIT_MIN)
+			goto unlock;
+	}
+	if (!chip->muted[out]) {
+		flag = bf_flag_cycle[chip->flag_cnt];
+		chip->flag_cnt = (chip->flag_cnt + 1) & 3;
+		bf_vendor_write(chip, BF_REQ_GAIN, BF_MASTER_8_0DB + db[0],
+				BF_REG_MASTER_8 + 2 * out);
+		bf_vendor_write(chip, BF_REQ_GAIN, BF_MASTER_8_0DB + db[1],
+				BF_REG_MASTER_8 + 2 * out + 1);
+		bf_vendor_write(chip, BF_REQ_CROSSPOINT, chip->master[out][0],
+				(BF_REG_MASTER_16 + 2 * out) | flag);
+		bf_vendor_write(chip, BF_REQ_CROSSPOINT, chip->master[out][1],
+				(BF_REG_MASTER_16 + 2 * out + 1) | flag);
+	}
+unlock:
 	mutex_unlock(&chip->mutex);
 }
 
@@ -2500,6 +2708,7 @@ static void bf_panel_tick(struct snd_usb_babyface *chip)
 		else if (cls == 2)
 			bf_panel_gain_wheel(chip, delta);
 	}
+	bf_panel_out_resync(chip);
 
 	/* Selections - keep the previous when the field is not in range
 	 * (the fader-mode readback drops the IN position bits).
@@ -2658,12 +2867,16 @@ void babyface_panel_work(struct work_struct *work)
 {
 	struct snd_usb_babyface *chip = container_of(work,
 			struct snd_usb_babyface, panel_work.work);
+	unsigned int ms;
 
 	if (chip->shutdown)
 		return;
 	bf_panel_tick(chip);
-	schedule_delayed_work(&chip->panel_work,
-			      msecs_to_jiffies(chip->panel_poll_ms));
+	chip->panel_poll_t = ktime_get();
+	/* Poll fast for a moment after an OUT wheel click. */
+	ms = time_before(jiffies, chip->panel_fast_until) ?
+	     BF_PANEL_FAST_POLL_MS : chip->panel_poll_ms;
+	schedule_delayed_work(&chip->panel_work, msecs_to_jiffies(ms));
 }
 
 void babyface_panel_start(struct snd_usb_babyface *chip)
@@ -2678,6 +2891,10 @@ void babyface_panel_start(struct snd_usb_babyface *chip)
 	chip->panel_select = 3;	/* none */
 	chip->panel_select_armed = true;
 	chip->panel_start = jiffies;
+	chip->panel_fast_until = jiffies;
+	chip->panel_poll_t = 0;
+	/* No master holds 0xffff: the wheel starts from the masters. */
+	memset(chip->panel_master_last, 0xff, sizeof(chip->panel_master_last));
 	schedule_delayed_work(&chip->panel_work, 0);
 }
 

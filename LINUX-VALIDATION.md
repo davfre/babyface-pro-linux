@@ -535,6 +535,21 @@ gain in split mode). The Linux silence was the STEREO-LINK handling:
    Mid/High/two-band, cap_eq9 low cut freq, cap_reflevel, cap_fx3,
    cap_width2, cap_split2, cap_trim2): extract + document per
    WINDOWS-CAPTURE-PLAN.md.
+6. **Front-panel OUT wheel follows the firmware — VALIDATED
+   2026-09-17** (non-FS unit): the firmware moves the analog output
+   level on each click, so the driver writes only the 16-bit master
+   while the wheel turns and counts clicks with the firmware's step rule
+   (tools/usbdump/PROTOCOL.md, "Front-panel OUT wheel — the firmware
+   moves the level"). Test: a tone played to PH3/4, the headphone jack
+   cabled into IN3/IN4, the level recorded while turning.
+   - Before: turning made zipper noise (the level saw-toothed by
+     1-3 dB); after: a clean staircase, confirmed by ear on the main
+     outputs.
+   - Recorded check turns (slow, steady, fast, mixed, sides set apart,
+     down to silence): the driver's cached level matched the device's on
+     both sides in every complete turn; the resync at rest moved
+     nothing.
+   - Open: the optical outputs, and the Pro FS.
 
 ## LONG-TERM: upstream to the Linux kernel
 

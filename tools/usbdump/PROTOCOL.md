@@ -1933,7 +1933,9 @@ byte2 = selection/counter, byte3 = button-down flash:
   (16-bit) with the 2-bit transaction counter cycling in the high
   bits; the `0x1A` 8-bit companion appears at gesture start/end.
   Wheel values follow the master curve 0x2000·2^(dB/6) (~0.5 dB/
-  click).
+  click in this capture). The analog step is the firmware's own and
+  depends on the level and turning speed: see "Front-panel OUT wheel —
+  the firmware moves the level" below.
 
 ### Front-panel readback — LIVE Linux verification (2026-08-26, kernel panel worker)
 
@@ -2064,6 +2066,62 @@ status stream carries the same panel state as the 0x17 control read:
   the standard-map crosspoints only (0x12 0x0002→0x0003→0x0005→
   0x0008→0x000c on 0x0034/0x004E/0x0035/0x004F = fader steps from
   -inf) + 0x1A on 0x000a/0x000b (the panel gain registers).
+
+### Front-panel OUT wheel — the firmware moves the level (measured 2026-09-17)
+
+Measured on a Babyface Pro (non-FS) with a 997 Hz tone played to PH3/4
+only and the headphone jack cabled back into IN3/IN4 (a stereo-to-mono
+split cable, so each side is recorded on its own input), the driver
+writing nothing (a debug build), and the 0x17 readback logged at every
+poll. The level was taken from the tone's envelope at 1 ms resolution.
+
+- **The firmware moves the analog output level itself** on every OUT
+  wheel click, with its own ~12 ms smoothing, whether or not the host
+  writes anything. TotalMix only mirrors it: `0x12` 16-bit writes
+  during the gesture, the `0x1A` 8-bit pair at the start and end.
+- A host `0x1A` 8-bit write overrides the firmware's move. A driver
+  that writes it on every 20 ms poll from its own click count makes
+  the level saw-tooth by 1-3 dB while the wheel turns (heard as
+  zipper noise). The `0x12` 16-bit master does not change the analog
+  level; it sets the digital outputs' level.
+- **Step per click**, set by the level of the louder side *before* the
+  click:
+
+  | level        | step   |
+  |--------------|--------|
+  | -9.5 dB and up | 0.5 dB |
+  | -10 to -25.5 dB | 1.0 dB |
+  | -26 to -41.5 dB | 1.5 dB |
+  | -42 to -57.5 dB | 2.0 dB |
+  | -58 dB and down | 3.0 dB |
+
+  Every level measured landed on the 0.5 dB grid to within 0.02 dB
+  (above about -58 dB; lower down, the analog attenuator reads up to
+  3 dB off the code).
+- **Balance**: both sides move by that same step, so a balance set with
+  hold-SELECT + wheel is kept.
+- **Speed**: a click that follows the previous one closely moves twice
+  as far (one doubled step, not two lookups). The first click of a turn
+  never does. Clicks up to 58 ms apart doubled; 67 ms and more did not.
+  The readback's counter carries no timing, so a host has to poll often
+  enough to tell the two apart: at the 20 ms default a 3-poll gap
+  (≈63 ms) is ambiguous.
+- **Floor**: a side that would go below -90 dB is muted. Turning up
+  from there continues from -90 dB (the first click lands at -87). When
+  the quieter side mutes first, the device keeps the offset: that side
+  comes back once the louder one is high enough, and the balance is
+  intact. The firmware's range goes well below the lowest 8-bit value
+  TotalMix writes (0x73 = -64 dB).
+- Not measured: the optical outputs, and the wheel on an output the
+  host has muted.
+
+The driver (`bf_panel_out_wheel`, `bf_out_wheel_step`) writes only the
+16-bit master while the wheel turns, counts clicks with this rule, polls
+every 5 ms for 200 ms after a click so it can tell fast clicks from
+slow, and writes the 8-bit and 16-bit masters once the wheel has rested
+for 150 ms (skipped below -64 dB), as TotalMix does. Replaying the
+recorded turns through that code gives each recorded end level, to
+within 0.5 dB for turns that go below -58 dB.
 
 ## Resources
 
