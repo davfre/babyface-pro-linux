@@ -49,6 +49,17 @@
 #include <sound/initval.h>
 #include <sound/pcm.h>
 
+/* kzalloc_obj() is a recent addition (absent on kernels older than the
+ * linux-next snapshot this driver is developed against) - this is the
+ * out-of-tree DKMS build only; the upstream submission itself always
+ * builds against a tree new enough to have it, so no fallback is
+ * carried there.  Reported against 6.19.14 (linux-tkg) by a user -
+ * thanks, Fabrizio.
+ */
+#ifndef kzalloc_obj
+#define kzalloc_obj(obj, flags) kzalloc(sizeof(obj), flags)
+#endif
+
 #define USB_VENDOR_RME			0x2a39
 #define USB_PRODUCT_BABYFACE_PRO_FS	0x3fc0
 
