@@ -503,23 +503,80 @@ active (0x0D → 0x0F).
 
 ## Sample rate / clock (cap_rates.pcap + cap_rates2.pcap, 2026-08-22)
 
-**A sample-rate change is PURELY `SET_INTERFACE(5, alt N)` — no vendor
-writes at all** (no `0x1B`, no `0x10` rate field). Final table from the
-clean 9-rate sweep (cap_rates2.pcap, user-confirmed order):
+**CORRECTED 2026-09-16 — the rate is the family register plus the alt,
+and the `0x1B` quad is varispeed only.** Measured on a 2015 Babyface
+Pro (non-FS) with `ratesweep` (usbdevfs, driver detached), and matched
+against the RME Windows driver's rate changes (USBPcap, 2026-09-14,
+all fourteen changes, idle).  Everything below this box that says
+"SET_INTERFACE only", "bandwidth class", "phase counter" or "2^alt +
+poll counter" is superseded; it is left in place as the record of how
+the wrong reading was reached.
+
+- **Base rate = `0x10 wValue=(family << 4) wIndex=0x0030`**, family
+  0 / 1 / 2 = 32 / 44.1 / 48 kHz.  The write registers at once, with
+  or without a keepalive.  The firmware derives its own DDS word from
+  it; no quad is needed and RME's driver sends none on a rate change.
+- **`SET_INTERFACE(5, alt)` is the speed multiplier**, alt 1 / 2 / 3 =
+  x1 / x2 / x4, not a bandwidth class.  Nine rates = 3 families x 3
+  alts.  So **64 kHz is alt 2 (32k family), 88.2 kHz is alt 2 (44.1k
+  family), 128 kHz is alt 3 (32k family)** — three rows of the table
+  below are wrong.  All nine measured with RME's own change sequence
+  (family, `0x05CF 0x0441`, SET_INTERFACE, arm; no cold-init, no quad):
+
+  ```
+  family 0x0000 alt1    31949 Hz     family 0x0000 alt2    63898 Hz     family 0x0000 alt3   127898 Hz
+  family 0x0010 alt1    44032 Hz     family 0x0010 alt2    88166 Hz     family 0x0010 alt3   176333 Hz
+  family 0x0020 alt1    47923 Hz     family 0x0020 alt2    95949 Hz     family 0x0020 alt3   191898 Hz
+  ```
+
+  (ratesweep's byte-rate estimate reads ~0.15 % low across the board;
+  `ratesweep ppm` puts the 44.1 kHz family at -1 ppm.)
+- **What RME's driver sends on a rate change**: the family write, then
+  `0x10 0x0441 0x05CF` (the settings word), then `SET_INTERFACE` only
+  when the multiplier changes.  Never a `0x1B` quad.  In the 2026-08-22
+  sweep the family writes WERE captured — they are the "`0x10
+  wVal=0x0010/0x0020/0x0000 wIdx=0x0030` on a ~7-15 s cycle" dismissed
+  below as a phase counter.  The sweep order 48→32→44.1→64→88.2→96→
+  128→176.4→192 walks the families 2,0,1,0,1,2,0,1,2, so the register
+  looked like a counter cycling 0x00→0x10→0x20.
+- **`0x11` readback byte 3 = `(multiplier << 2) | family`** (0..2 at
+  alt 1, 4..6 at alt 2, 8..A at alt 3).  It echoes the family
+  *register*, not the clock: it read 2 throughout a run in which a
+  quad had the clock at 44.1 kHz.  Not "2^alt + poll counter".
+- **`0x05FF` writes the family too.**  Request `0x10` is "write these
+  fields of one control word", wIndex the field mask: `0x0030` = the
+  family, `0x05CF` = the settings word, `0x05FF` = both.  Value bits
+  4-5 land in the family (measured: 0x0011 / 0x0001 / 0x0021 → `0x11`
+  = 1 / 0 / 2).  The cold-plug `0x10 0x0021 0x05FF` is therefore
+  "family 48 kHz + clock Internal" in one write.  Any host that sends
+  the cold-init tail after its family write puts the family back to
+  48 kHz — which is exactly what three days of "0x0030 is inert"
+  measurements on Linux were doing to themselves.
+- **The `0x1B` quad is a pitch RATIO on top of the family rate**, the
+  same four words at every sample rate, sticky in the device until
+  rewritten (it survives family writes).  The cold-plug 48 kHz quad is
+  x1.0.  See the pitch section for the encoding.  Every earlier
+  reading of the quad as an absolute rate was taken with the family at
+  48 kHz, where the two coincide.
+
 
 | Rate | SET_IFACE alt | note |
 |---|---|---|
 | 32 kHz | 1 | cap_rates2 sweep (48→32→44.1→64→88.2→96→128→176.4→192→48) |
 | 44.1 kHz | 1 | same |
 | 48 kHz | 1 | CONFIRMED 3× (streaming, cap_fus 96→48, sweep) |
-| 64 kHz | 1 | sweep |
-| 88.2 kHz | 1 | sweep |
+| 64 kHz | ~~1~~ **2** (2026-09-16) | sweep |
+| 88.2 kHz | ~~1~~ **2** (2026-09-16) | sweep |
 | 96 kHz | 2 | CONFIRMED (cap_fus 48→96, sweep) |
-| 128 kHz | 2 | sweep |
+| 128 kHz | ~~2~~ **3** (2026-09-16) | sweep |
 | 176.4 kHz | 3 | sweep |
 | 192 kHz | 3 | sweep |
 
-**The alt-setting is a BANDWIDTH CLASS, not a 1:1 rate code.** The
+**~~The alt-setting is a BANDWIDTH CLASS, not a 1:1 rate code.~~**
+(SUPERSEDED 2026-09-16: it is the x1/x2/x4 speed; the sweep saw three
+SET_IFACE because the sweep order only crossed a multiplier three
+times, and the family writes between them were misread — see the
+correction above.) The
 sweep (user confirmed the exact order 48→32→44.1→64→88.2→96→128→
 176.4→192→48) produced only 3 SET_IFACE — the 3 alt transitions
 (88.2→96: 1→2, 128→176.4: 2→3, 192→48: 3→1), ~15 s apart = 2 rate
@@ -532,21 +589,29 @@ B/ms (14ch ≤64k, 10ch at 88.2-128k, 8ch at 176.4/192k).
 Alt packet sizes: 0 = 64, 1 = 448, 2 = 640, 3 = 1024 B (`alt 0` unused).
 
 Traffic around each change: `0x10 wVal=0x0010/0x0020/0x0000 wIdx=0x0030`
-on a ~7-15 s cycle (phase counter, NOT rate-specific — the wVal cycles
-0x0010 → 0x0020 → 0x0000 regardless) + `0x10 0x0001 wIdx=0x05CF`
-keepalive (~3 s). The 480-B telemetry (ep 0x85) carries only meter/
+on a ~7-15 s cycle ~~(phase counter, NOT rate-specific — the wVal cycles
+0x0010 → 0x0020 → 0x0000 regardless)~~ **(SUPERSEDED 2026-09-16: this
+IS the rate — the family register, 0x00/0x10/0x20 = 32k/44.1k/48k
+family, and the sweep order made it look cyclic)** + `0x10 0x0001
+wIdx=0x05CF` keepalive (~3 s). The 480-B telemetry (ep 0x85) carries only meter/
 level fields — no rate info.
 
-Code impact: `streaming_init`'s `0x1B` block (from the coldplug capture)
+Code impact ~~: `streaming_init`'s `0x1B` block (from the coldplug capture)
 stays for COLD START; mid-session rate change = SET_INTERFACE only.
 Whether the 0x1B values are rate-dependent is unverified (the sweep
-showed NO 0x1B writes — they likely are not).
+showed NO 0x1B writes — they likely are not).~~ (2026-09-16): rate
+change = family write + settings word + SET_INTERFACE when the
+multiplier changes; the `0x1B` values are NOT rate-dependent, they are
+the pitch ratio.  The kernel driver does this from `fix/pcm-sample-
+rate-clock` on.
 
 **Alt verification via the `0x11` readback (cap_rates2.pcap)**: the last
-byte of the 4-byte `0x11` reply encodes the current alt-setting as
+byte of the 4-byte `0x11` reply ~~encodes the current alt-setting as
 `2^alt` (alt 1 → 0x02, alt 2 → 0x04, alt 3 → 0x08) plus a low counter
 incrementing every ~5 s poll cycle (0x04→0x05→0x06 between changes,
-reset to the 2^alt base on each SET_IFACE). On Linux, after
+reset to the 2^alt base on each SET_IFACE)~~ **is `(multiplier << 2) |
+family` (CORRECTED 2026-09-16)**: the "counter" steps 0x04→0x05→0x06
+were the family register changing 32k→44.1k→48k under alt 2. On Linux, after
 `SET_INTERFACE(5, alt N)`, read `0x11` and check byte 3 & 0x0F for
 2/4/8 to confirm the alt took effect. (The `0x17` readback stays
 `[0D,01,40,40]` — it does NOT report the rate.)
@@ -566,7 +631,8 @@ the alt's frame layout (frame bytes × 256 frames per URB):
 stream stalls there unless the URBs are resized (10240 = 640×16 =
 40 B × 256). alt3 worked even at 14336 B (1024×14) but the frame
 layout is 32 B. `0x11` byte 3 read 0x02/0x06/0x0A for alt 1/2/3
-(2^alt + poll counter) as documented.
+~~(2^alt + poll counter) as documented~~ (= `(alt-1) << 2 | 2`, the 48 kHz
+family at each multiplier — consistent with the corrected decode).
 
 ### Clock source / no-lock state (cap_clk.pcap, 2026-08-22) — the 0x80 mystery SOLVED
 
@@ -612,6 +678,49 @@ state uploads the app does on open/OK, which are host-side re-syncs
 and not needed to change a setting).
 
 ### Pitch / varispeed — the 0x1B quad is 24-bit fixed point (cap_pitch.pcap, 2026-08-23, FULL SWEEP DECODED)
+
+**CORRECTED 2026-09-16 — the quad is a ratio, only bank 2 is read, and
+the device's constant is exact.**  Measured on the 2015 unit
+(`ratesweep bank`, `ratesweep ppm`, `ratesweep pitchfam`):
+
+- The quad does not carry the sample rate.  It is a pitch ratio
+  applied on top of the family-derived rate (see the correction under
+  "Sample rate / clock"), the same bytes at 32, 44.1 or 48 kHz, sticky
+  in the device until rewritten.  The 48 kHz cold-plug quad is x1.0.
+  `rate = family_rate x 8533333.33 / bank2_24`.
+- **Only bank 2 is read** on this unit: swapping any one bank between
+  two quads, in both directions, moves the clock for bank 2 alone.
+  Banks 0, 1 and 3 are inert (which is why "the fractions do not
+  matter" and "bank3 = 0x7CFF works everywhere" were found below —
+  those banks are never looked at).  Which bank an FS reads is not
+  known; the FS ran PR #7's driver with bank 3 wrong by 33 % at 32 kHz
+  without noticing, so at least bank 3 is inert there too.
+- **Bank 2's 24-bit value is a period word with 1.0 = 2^14 x 25 MHz /
+  48000 = 8533333.33** (`4.096e11 / 48000`; 4.096e11 = 2^9 x 800 MHz
+  = 2^11 x 200 MHz, the two SteadyClock DDS clocks RME publishes).
+  `bank2_24 = round(8533333.33 x 1000 / (1000 + pitch_permille))`.
+- **The four banks are one number in fixed ratios 1 : 0.72562 :
+  0.66667 : 0.64 = 32000/F for F = 32000 / 44100 / 48000 / 50000**,
+  and RME's host software derives banks 1-3 from bank 0 with the Q16
+  constants `0xB9C2, 0xAAAA, 0xA3D7` (= floor(65536 x 32000/F)),
+  **truncated**.  That reproduces every captured quad byte for byte,
+  fraction bytes included; "0.72562" and "2/3" below are these
+  constants read back as decimals.
+- **The truncation costs 15 ppm.**  RME's own 48 kHz bank 2 is
+  `0x8234D3` (8533203); the exact word is `0x823555` (8533333).  Ten
+  minutes per word against an NTP-disciplined clock, clocking 44.1 kHz
+  through the quad (family 48 kHz, 44.1 kHz-period word): exact word
+  `0x8DB92E` -0.95 ppm, RME's Q16 word `0x8DB8A0` +14.1 ppm; and the
+  family register alone at 44.1 kHz with an exact x1.0 quad, -1.04 ppm.
+  The firmware's constant is exact; the host's arithmetic is not.  The
+  kernel driver sends bank 2 exact and banks 0/1/3 as RME computes
+  them (`bf_pitch_write()`).
+- "bank3 = QUANTIZED, sticks at values like 0x7C01" below: the Q16
+  model's **bank 2** at 48 kHz +5 % is `0x7C018B`.  The original decode
+  probably had the bank index off by one; bank 3 is inert anyway.
+- Because the ratio is sticky, a host that wants pitch 0 must SEND the
+  x1.0 quad, not omit it.  The quad still needs the settings-word
+  write after it (`0x10 <settings> 0x05CF`) to take effect.
 
 A full pitch-slider drag (0 → +5 → -5 → 0, 454 quads) decoded the
 quad completely:
@@ -937,11 +1046,12 @@ Two things were added to the Linux port to mirror the Windows driver:
 
 ```
 bReq=0x16 x57  wValue=0x0000  wIndex=0x0000..0x001D, 0x0020..0x003D  (reg clear)
-bReq=0x1B      wValue=0xC350  wIndex=0x0000   (clock setup — values
-bReq=0x1B      wValue=0x8DB8  wIndex=0xD201    captured at 48 kHz,
- bReq=0x1B      wValue=0x8234  wIndex=0xD302    likely change with the
- bReq=0x1B      wValue=0x7CFF  wIndex=0xF803    sample rate)
-bReq=0x10      wValue=0x0021  wIndex=0x05FF
+bReq=0x1B      wValue=0xC350  wIndex=0x0000   (pitch x1.0 quad — NOT
+bReq=0x1B      wValue=0x8DB8  wIndex=0xD201    rate-dependent; the same
+ bReq=0x1B      wValue=0x8234  wIndex=0xD302    bytes at every rate,
+ bReq=0x1B      wValue=0x7CFF  wIndex=0xF803    see 2026-09-16 correction)
+bReq=0x10      wValue=0x0021  wIndex=0x05FF   (= family 48 kHz | clock
+                                                Internal, 0x05FF = 0x0030|0x05CF)
 bReq=0x17      wValue=0x000C/0x000D  wIndex=0x0000   (preamp, wIdx=0 here)
 bReq=0x21      wValue=0x0000  wIndex=0x0000
 bReq=0x10      wValue=0x0000  wIndex=0x3000   x2
@@ -1019,16 +1129,18 @@ requests, not in TotalMix's presence.
 
 **Still open:**
 
-1. ~~Sample-rate/clock state~~ — RESOLVED (see "Sample rate / clock"):
-   a mid-session rate change is SET_INTERFACE(5, alt) only; the alt
-   table for all 9 rates is complete. The `0x1B` init block stays as
-   captured (48 kHz, cold start).
+1. ~~Sample-rate/clock state~~ — RESOLVED (see "Sample rate / clock",
+   correction of 2026-09-16): a rate change is the family register
+   (`0x10 family<<4 → 0x0030`) + the settings word + SET_INTERFACE(5,
+   alt) as the x1/x2/x4 multiplier. The `0x1B` init block is the x1.0
+   pitch quad and stays as captured.
 2. ~~Whether the 48V LED physically engages~~ — RESOLVED (hardware):
    the P48 LED follows the toggle; 48V works with or without a stream.
 3. **The `0x16`/`0x15` register-clear ranges and the `0x1C` role**
    (written once in the init burst, then polled in the status cycle).
-4. ~~Streaming at higher sample rates~~ — RESOLVED: alt 1 = 32/44.1/48/
-   64/88.2, alt 2 = 96/128, alt 3 = 176.4/192 kHz (cap_rates2.pcap).
+4. ~~Streaming at higher sample rates~~ — RESOLVED: alt 1 = 32/44.1/48,
+   alt 2 = 64/88.2/96, alt 3 = 128/176.4/192 kHz (corrected 2026-09-16;
+   the 2026-08-22 table had 64, 88.2 and 128 one alt too low).
    Note: byte 2 = 0x80 (long interpreted as "streaming/session valid")
    is actually the CLOCK NO-LOCK state — see "Clock source / no-lock
    state" below.
@@ -1100,8 +1212,9 @@ bit-7 semantics are: 0x80 = clock source not locked.
 - The 9-byte status packets on ep 0x82 (always flowing on Windows'
   device) NEVER flow on our device (0 completions with 9-B URBs after
   a full init). Interleaved with audio in cap_audio (~every 7-8 ms).
-- 0x1B rate codes (0xC350 48k, 0xB372 44.1k-derived, 0x86A0 96k,
-  0x66E3 88.2k) change NEITHER byte 2 NOR the 0x10/0x19 reads.
+- 0x1B ~~rate codes~~ quads (0xC350 48k, 0xB372 44.1k-derived, 0x86A0 96k,
+  0x66E3 88.2k — these are ratios against 48 kHz, not rate codes; see
+  the 2026-09-16 correction) change NEITHER byte 2 NOR the 0x10/0x19 reads.
   0x10 = `21 48 00 00` / 0x19 = `44 DC 00 00` after init are static.
 - `0x1C 0x0000 0x0000` WRITE in our init is a misread: cap_coldplug
   frame #173 is a 0x1C READ (`bm=0xC0 wLen=4`). Init order corrected:
@@ -2136,8 +2249,11 @@ status stream carries the same panel state as the 0x17 control read:
       streaming flag. Byte 0 = 0x0C/0x0D is the streaming-ish state.
 - [x] Capture the 0x41 → 0x80 transition (never captured before)
       → 0x80 = clock no-lock (see "Clock source / no-lock state")
-      → mid-session rate change = SET_INTERFACE(5, alt) ONLY, no 0x1B.
+      → ~~mid-session rate change = SET_INTERFACE(5, alt) ONLY, no 0x1B.
       COMPLETE alt table (cap_rates2 sweep): alt 1 = 32/44.1/48/64/88.2,
-      alt 2 = 96/128, alt 3 = 176.4/192. 0x1B = 4-bank register upload
-      (wIdx = addr<<8 | bank); the 48k clock quad is in the coldplug
-      block. 0x11 readback encodes the alt as 2^alt (2/4/8).
+      alt 2 = 96/128, alt 3 = 176.4/192.~~ CORRECTED 2026-09-16: rate =
+      family register (0x10 family<<4 → 0x0030) + SET_INTERFACE(5, alt)
+      as x1/x2/x4; alt 1 = 32/44.1/48, alt 2 = 64/88.2/96, alt 3 =
+      128/176.4/192. 0x1B = the pitch quad, a ratio, not a rate; the
+      48k quad in the coldplug block is x1.0. 0x11 byte 3 =
+      (multiplier<<2)|family.
