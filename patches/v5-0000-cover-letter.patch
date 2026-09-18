@@ -1,6 +1,6 @@
-From 76d9b1a8a00dbf0a80f972a1e40c206939ab660d Mon Sep 17 00:00:00 2001
+From 223c1afe2967be54f7060e429154f008f1ef7472 Mon Sep 17 00:00:00 2001
 From: =?UTF-8?q?Isma=C3=AFl=20Bahloul?= <i.bahloul01@gmail.com>
-Date: Fri, 18 Sep 2026 11:08:31 +0100
+Date: Fri, 18 Sep 2026 12:29:26 +0100
 Subject: [RFC PATCH v5 0/8] ALSA: usb: add RME Babyface Pro driver (proprietary mode)
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
@@ -41,12 +41,16 @@ out:
    rest, the way TotalMix does (patch 6).
 
 Every patch was built in-tree on its own against next-20260911 and is
-checkpatch --strict clean; four CHECK-level notices remain (the same
-three noted in v4 - `ang` x2 and BIT() vs (1 << 27) in the EQ patch -
-plus one new one in the rate fix above) and are declined for the same
-reason each time: BIT() returns unsigned long, wrong for that file's
-signed Q27 fixed-point math, and `ang`/`retuned` are both correctly
-spelled.
+checkpatch --strict clean of errors; five WARNING-level notices remain
+across the series when checkpatch is run against the patch files
+themselves (the same two `ang` "misspellings" in the EQ patch noted in
+v4, plus one new `retuned` "misspelling" from the rate fix above -
+all three are correctly spelled, BIT() is separately declined as a
+CHECK in the EQ patch because it returns unsigned long, wrong for that
+file's signed Q27 fixed-point math - and two routine "does MAINTAINERS
+need updating?" reminders on the patches that add files, answered
+once in patch 1's
+MAINTAINERS entry for the whole series).
 
 How this v5 is split, and why:
 
@@ -141,7 +145,7 @@ Ismaïl Bahloul (8):
   ALSA: usb: babyfacepro: add the hardware DSP EQ
   Documentation: sound: add the Babyface Pro proprietary-mode design doc
 
- Documentation/sound/cards/babyface-pro.rst |  161 +
+ Documentation/sound/cards/babyface-pro.rst |  163 +
  Documentation/sound/cards/index.rst        |    1 +
  MAINTAINERS                                |    6 +
  sound/usb/Kconfig                          |   20 +
@@ -150,7 +154,7 @@ Ismaïl Bahloul (8):
  sound/usb/babyfacepro/babyfacepro-ctl.c    | 3775 ++++++++++++++++++++
  sound/usb/babyfacepro/babyfacepro.c        | 1700 +++++++++
  sound/usb/babyfacepro/babyfacepro.h        |  522 +++
- 9 files changed, 6190 insertions(+), 1 deletion(-)
+ 9 files changed, 6192 insertions(+), 1 deletion(-)
  create mode 100644 Documentation/sound/cards/babyface-pro.rst
  create mode 100644 sound/usb/babyfacepro/Makefile
  create mode 100644 sound/usb/babyfacepro/babyfacepro-ctl.c

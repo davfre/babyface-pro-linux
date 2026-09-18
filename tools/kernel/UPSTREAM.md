@@ -545,10 +545,20 @@ monolith organization difference, not a gap) by diffing against the
 
 Cover letter rewritten to drop the "no functional change from v4"
 claim (no longer true) and describe the three fixes and their
-hardware verification; patch/line counts regenerated. One new CHECK-
-level checkpatch note appeared in patch 1 from PR7's fold-in
-(`retuned` flagged as a misspelling - it isn't); still 0 errors,
-0 warnings across the series.
+hardware verification; patch/line counts regenerated. Re-ran
+checkpatch on the actual generated patch files (not the whole-tree
+`-f` mode used for the quick per-edit checks above, which under-
+reports: spelling notices show as CHECK there but as WARNING in real
+patch-file mode) and found the real, pre-send number: 0 errors, 5
+WARNINGs across the series - the same two `ang` false positives from
+v4, one new `retuned` false positive from PR7's fold-in (patch 1, both
+correctly spelled), and two routine "does MAINTAINERS need updating?"
+reminders on the patches that add files (patch 1 already covers the
+whole series' MAINTAINERS entry). Also caught and fixed a real,
+new-file SPDX tag missing from patch 8's `babyface-pro.rst` - not
+carried by the older docs in the same directory but present on the
+newest one there (`pcmtest.rst`), so added rather than left as a false
+positive.
 
 Patches regenerated: `patches/v5-0000-cover-letter.patch` through
 `patches/v5-0008-*.patch` (same filenames, content replaced). Not

@@ -1,4 +1,4 @@
-From 76d9b1a8a00dbf0a80f972a1e40c206939ab660d Mon Sep 17 00:00:00 2001
+From 223c1afe2967be54f7060e429154f008f1ef7472 Mon Sep 17 00:00:00 2001
 From: =?UTF-8?q?Isma=C3=AFl=20Bahloul?= <i.bahloul01@gmail.com>
 Date: Wed, 16 Sep 2026 22:09:36 +0100
 Subject: [RFC PATCH v5 8/8] Documentation: sound: add the Babyface Pro
@@ -19,17 +19,19 @@ not restating what the code comments already say inline.
 
 Signed-off-by: Ismaïl Bahloul <i.bahloul01@gmail.com>
 ---
- Documentation/sound/cards/babyface-pro.rst | 161 +++++++++++++++++++++
+ Documentation/sound/cards/babyface-pro.rst | 163 +++++++++++++++++++++
  Documentation/sound/cards/index.rst        |   1 +
- 2 files changed, 162 insertions(+)
+ 2 files changed, 164 insertions(+)
  create mode 100644 Documentation/sound/cards/babyface-pro.rst
 
 diff --git a/Documentation/sound/cards/babyface-pro.rst b/Documentation/sound/cards/babyface-pro.rst
 new file mode 100644
-index 000000000..f39d42f53
+index 000000000..d67f8c6fe
 --- /dev/null
 +++ b/Documentation/sound/cards/babyface-pro.rst
-@@ -0,0 +1,161 @@
+@@ -0,0 +1,163 @@
++.. SPDX-License-Identifier: GPL-2.0
++
 +=================================================
 +RME Babyface Pro / Pro FS (snd-usb-babyface-pro)
 +=================================================
