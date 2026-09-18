@@ -503,7 +503,25 @@ sh tools/kernel/regress.sh --dur 1 --mixer-restore --disconnect-test
 /lib/modules/$(uname -r)/build/scripts/checkpatch.pl --no-tree --file <file>
 ```
 
-## v5 - RE-CUT 2026-09-18 (PR7/8/9 folded in) - READY, pending explicit go-ahead
+## v5 - SENT 2026-09-18
+
+Mailed via `git send-email` to linux-sound@vger.kernel.org, Cc
+linux-usb@vger.kernel.org, alsa-devel@alsa-project.org, Jaroslav
+Kysela, Takashi Iwai, linux-kernel@vger.kernel.org, and the
+Documentation reviewers pulled in for patch 8 (Jonathan Corbet, Shuah
+Khan, Randy Dunlap, linux-doc@vger.kernel.org). `git send-email`
+auto-CC'd David Fredman, detected from his `Co-developed-by:`/
+`Signed-off-by:` trailers on patches 1, 2, 3 and 6.
+
+`get_maintainer.pl`'s raw output also listed a "Mark Brown
+<broonie@kernel.org>" with a suspicious 50% commit_signer/authored
+split - traced to this linux-next clone's synthetic "Add linux-next
+specific files" infra commit, not a real contributor to this driver's
+history, so left out of the Cc list rather than copied blind.
+
+Now waiting on review.
+
+## v5 - RE-CUT 2026-09-18 (PR7/8/9 folded in)
 
 The 2026-09-17 re-split below was cut before PR #7, #8 and #9 (all
 David Fredman's) were merged into `main` - it silently missed all
