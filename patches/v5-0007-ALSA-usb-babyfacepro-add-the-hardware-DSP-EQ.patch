@@ -1,4 +1,4 @@
-From dd672e0ab1a41202842b5dc1eaf863ad7603fe73 Mon Sep 17 00:00:00 2001
+From ebb34e571d13e51b38a826d7745ab7f3cd83e751 Mon Sep 17 00:00:00 2001
 From: =?UTF-8?q?Isma=C3=AFl=20Bahloul?= <i.bahloul01@gmail.com>
 Date: Wed, 16 Sep 2026 22:06:23 +0100
 Subject: [RFC PATCH v5 7/8] ALSA: usb: babyfacepro: add the hardware DSP EQ
@@ -24,10 +24,10 @@ Signed-off-by: Ismaïl Bahloul <i.bahloul01@gmail.com>
  3 files changed, 602 insertions(+)
 
 diff --git a/sound/usb/babyfacepro/babyfacepro-ctl.c b/sound/usb/babyfacepro/babyfacepro-ctl.c
-index bc028118b..d85ac06b7 100644
+index eac97c895..fce1233cc 100644
 --- a/sound/usb/babyfacepro/babyfacepro-ctl.c
 +++ b/sound/usb/babyfacepro/babyfacepro-ctl.c
-@@ -3008,3 +3008,578 @@ int babyface_create_panel(struct snd_usb_babyface *chip)
+@@ -3198,3 +3198,578 @@ int babyface_create_panel(struct snd_usb_babyface *chip)
  	return 0;
  }
  
@@ -607,19 +607,19 @@ index bc028118b..d85ac06b7 100644
 +}
 +
 diff --git a/sound/usb/babyfacepro/babyfacepro.c b/sound/usb/babyfacepro/babyfacepro.c
-index 593025173..f944aabf0 100644
+index 8cf68e404..2e406fb90 100644
 --- a/sound/usb/babyfacepro/babyfacepro.c
 +++ b/sound/usb/babyfacepro/babyfacepro.c
-@@ -1037,6 +1037,8 @@ static int babyface_pcm_hw_params(struct snd_pcm_substream *subs,
+@@ -1188,6 +1188,8 @@ static int babyface_pcm_hw_params(struct snd_pcm_substream *subs,
  		chip->rate = r->rate;
  		chip->alt = r->alt;
  		chip->frame_bytes = r->frame_bytes;
 +		/* The DSP EQ coefficients depend on fs: re-upload. */
 +		bf_eq_reupload(chip);
+ 		/* Publish the new geometry before restarting either stream. */
+ 		schedule_work(&chip->stream_work);
  		dev_dbg(&chip->dev->dev, "rate %u Hz (alt %u)\n",
- 			chip->rate, chip->alt);
- 	}
-@@ -1381,6 +1383,12 @@ static int babyface_probe(struct usb_interface *intf,
+@@ -1535,6 +1537,12 @@ static int babyface_probe(struct usb_interface *intf,
  		goto error;
  	}
  
@@ -633,10 +633,10 @@ index 593025173..f944aabf0 100644
  	if (err < 0) {
  		dev_err(&intf->dev, "snd_card_register failed: %d\n", err);
 diff --git a/sound/usb/babyfacepro/babyfacepro.h b/sound/usb/babyfacepro/babyfacepro.h
-index 953c3c5c9..88f3be7ff 100644
+index ba1225de6..cfb20aa7b 100644
 --- a/sound/usb/babyfacepro/babyfacepro.h
 +++ b/sound/usb/babyfacepro/babyfacepro.h
-@@ -372,6 +372,21 @@ struct snd_usb_babyface {
+@@ -405,6 +405,21 @@ struct snd_usb_babyface {
  					 * so the input VU follows the wheel)
  					 */
  	struct snd_kcontrol *panel_kctl[7]; /* for snd_ctl_notify */
@@ -658,7 +658,7 @@ index 953c3c5c9..88f3be7ff 100644
  };
  
  /* The mixer state cached across interface re-probes/resume (see
-@@ -455,6 +470,10 @@ int babyface_create_panel(struct snd_usb_babyface *chip);
+@@ -494,6 +509,10 @@ int babyface_create_panel(struct snd_usb_babyface *chip);
  void babyface_panel_start(struct snd_usb_babyface *chip);
  void babyface_panel_stop(struct snd_usb_babyface *chip);
  void babyface_panel_work(struct work_struct *work);

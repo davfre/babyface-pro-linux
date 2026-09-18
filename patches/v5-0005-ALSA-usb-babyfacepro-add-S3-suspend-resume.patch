@@ -1,4 +1,4 @@
-From 0b7995cff20d1484944be5435820b57a92cd9ad3 Mon Sep 17 00:00:00 2001
+From 42898fa33375f09bd40a3e756f328389a7ab9393 Mon Sep 17 00:00:00 2001
 From: =?UTF-8?q?Isma=C3=AFl=20Bahloul?= <i.bahloul01@gmail.com>
 Date: Wed, 16 Sep 2026 21:56:19 +0100
 Subject: [RFC PATCH v5 5/8] ALSA: usb: babyfacepro: add S3 suspend/resume
@@ -20,10 +20,10 @@ Signed-off-by: Ismaïl Bahloul <i.bahloul01@gmail.com>
  1 file changed, 48 insertions(+)
 
 diff --git a/sound/usb/babyfacepro/babyfacepro.c b/sound/usb/babyfacepro/babyfacepro.c
-index 3531240af..99112060b 100644
+index c15fca214..ccf3dbf36 100644
 --- a/sound/usb/babyfacepro/babyfacepro.c
 +++ b/sound/usb/babyfacepro/babyfacepro.c
-@@ -1438,6 +1438,52 @@ static void babyface_disconnect(struct usb_interface *intf)
+@@ -1592,6 +1592,52 @@ static void babyface_disconnect(struct usb_interface *intf)
  	snd_card_free_when_closed(chip->card);
  }
  
@@ -76,7 +76,7 @@ index 3531240af..99112060b 100644
  static const struct usb_device_id babyface_ids[] = {
  	{ USB_DEVICE(USB_VENDOR_RME, USB_PRODUCT_BABYFACE_PRO_FS) },
  	{ }
-@@ -1448,6 +1494,8 @@ static struct usb_driver babyface_driver = {
+@@ -1602,6 +1648,8 @@ static struct usb_driver babyface_driver = {
  	.name = "snd-usb-babyface-pro",
  	.probe = babyface_probe,
  	.disconnect = babyface_disconnect,

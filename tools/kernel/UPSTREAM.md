@@ -503,6 +503,57 @@ sh tools/kernel/regress.sh --dur 1 --mixer-restore --disconnect-test
 /lib/modules/$(uname -r)/build/scripts/checkpatch.pl --no-tree --file <file>
 ```
 
+## v5 - RE-CUT 2026-09-18 (PR7/8/9 folded in) - READY, pending explicit go-ahead
+
+The 2026-09-17 re-split below was cut before PR #7, #8 and #9 (all
+David Fredman's) were merged into `main` - it silently missed all
+three. Found while re-verifying the series today with the usual
+function-set-diff rigor check against the real source, after merging
+PR7 (the last of the three): patch 6 still had the old, wrong
+`bf_panel_out_decode()` and none of PR9's OUT-wheel functions existed
+at all. Re-derived patches 1, 2, 4 and 6 against `main` post-PR7/8/9,
+verified line-for-line against the real source (not just the function
+set) for every touched region, rebuilt patches 7 and 8 on top with
+`git rebase --onto`, and re-ran the full build + `checkpatch --strict`
+pass on the result.
+
+What's newly folded in, on top of the pure restructuring:
+- PR7: sample rate set through the family register instead of the
+  previous approach, plus a running-stream rate lock (refuses a
+  conflicting `hw_params` from the other direction rather than
+  silently retuning a live stream). Patches 1, 2, 4.
+- PR8: front-panel OUT selector base-mode decode fix (0/1/2 mapped to
+  the wrong outputs). Patch 6.
+- PR9: OUT wheel zipper-noise fix - the driver no longer fights the
+  firmware's own analog-level move on every poll; it now writes only
+  the digital master during a wheel gesture, follows the firmware's
+  real level/speed-dependent step size, and reconciles the analog
+  master once the wheel is at rest, the way TotalMix does. Patch 6.
+
+All three carry David's `Co-developed-by:`/`Signed-off-by:` trailers
+on the patches whose diffs they landed in. Rigor check: full
+line-for-line diff of the front-panel region (patch 6, the
+`bf_panel_write_master` through `babyface_panel_stop` span) against
+the current `main` source - byte-identical except one pre-existing
+comment line-wrap difference unrelated to this fold-in. Function-set
+diff across the whole tree still shows the same `babyface_create_*`
+consolidation and `bf_crosspoint_clear_cross`/`bf_vendor_write_cycle`
+placement divergence as the original 2026-09-17 cut and the pristine
+pre-rework backup - confirmed pre-existing (a deliberate split-vs-
+monolith organization difference, not a gap) by diffing against the
+`v5-split-backup` branch.
+
+Cover letter rewritten to drop the "no functional change from v4"
+claim (no longer true) and describe the three fixes and their
+hardware verification; patch/line counts regenerated. One new CHECK-
+level checkpatch note appeared in patch 1 from PR7's fold-in
+(`retuned` flagged as a misspelling - it isn't); still 0 errors,
+0 warnings across the series.
+
+Patches regenerated: `patches/v5-0000-cover-letter.patch` through
+`patches/v5-0008-*.patch` (same filenames, content replaced). Not
+sent - same rule as always, explicit go-ahead required first.
+
 ## v5 - RE-SPLIT 2026-09-17 (Takashi's v4 review: still too coarse) - READY, pending explicit go-ahead
 
 Takashi's reply to v4 (2026-09-16): the 3-patch split is still too coarse

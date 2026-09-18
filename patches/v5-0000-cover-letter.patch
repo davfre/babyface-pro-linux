@@ -1,6 +1,6 @@
-From f32711b646c7724daa56caaad5a99fb09830c128 Mon Sep 17 00:00:00 2001
+From 76d9b1a8a00dbf0a80f972a1e40c206939ab660d Mon Sep 17 00:00:00 2001
 From: =?UTF-8?q?Isma=C3=AFl=20Bahloul?= <i.bahloul01@gmail.com>
-Date: Thu, 17 Sep 2026 17:44:56 +0100
+Date: Fri, 18 Sep 2026 11:08:31 +0100
 Subject: [RFC PATCH v5 0/8] ALSA: usb: add RME Babyface Pro driver (proprietary mode)
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
@@ -13,13 +13,40 @@ a minimalistic core (probe/disconnect/PCM only), add mixers
 piece-by-piece, suspend/resume near the end, and add proper "big
 picture" documentation for human reviewers.
 
-No functional change from v4 - this series is a pure restructuring of
-the same driver into 8 patches instead of 3, plus a new documentation
-patch. Every patch was built in-tree on its own against next-20260911
-and is checkpatch --strict clean (the same two false positives noted
-in v4, `ang` x2 and BIT() vs (1 << 27) in the EQ patch, still apply
-and are still declined for the same reason: BIT() returns unsigned
-long, wrong for that file's signed Q27 fixed-point math).
+Beyond the restructuring, this revision also folds in three
+hardware-verified fixes found by a contributor (David Fredman,
+credited per-patch via Co-developed-by/Signed-off-by) since v4 went
+out:
+
+ - The sample rate is now set through the family register the
+   firmware actually keys off, rather than the previous approach,
+   which could leave the device on the wrong rate after certain
+   family transitions. A running stream also now locks the rate: a
+   second client asking for a conflicting rate is refused at
+   hw_params rather than silently retuning a live stream out from
+   under it (patches 1, 2, 4).
+
+ - The front-panel OUT selector's base-mode decode (Ch 1/2 vs Phones
+   vs Opt) was wrong on selector values 0/1/2, corrected against the
+   physical LEDs on both a non-FS unit and the Pro FS (patch 6).
+
+ - Turning the front-panel wheel with OUT selected produced audible
+   zipper noise: the firmware moves the analog output level itself on
+   each click with its own ~12 ms smoothing, and the driver was also
+   writing the analog (8-bit) master on every poll from a flat
+   1 dB/click count, fighting the firmware's own move each time. The
+   driver now writes only the digital (16-bit) master during the
+   gesture, follows the firmware's actual level- and speed-dependent
+   step size, and reconciles the real master once the wheel is at
+   rest, the way TotalMix does (patch 6).
+
+Every patch was built in-tree on its own against next-20260911 and is
+checkpatch --strict clean; four CHECK-level notices remain (the same
+three noted in v4 - `ang` x2 and BIT() vs (1 << 27) in the EQ patch -
+plus one new one in the rate fix above) and are declined for the same
+reason each time: BIT() returns unsigned long, wrong for that file's
+signed Q27 fixed-point math, and `ang`/`retuned` are both correctly
+spelled.
 
 How this v5 is split, and why:
 
@@ -88,7 +115,12 @@ stress, mixer-restore-across-unbind/rebind and mid-stream-disconnect
 regression suite as v4, run against the final tree - 40 of 40. Each of
 the 8 patches was additionally checked out on its own and built
 in-tree, to confirm the split itself introduces no broken intermediate
-state.
+state. The three fixes above were separately hardware-verified: all
+nine rate/family combinations plus varispeed and the rate-lock
+refusal (patches 1/2/4); LED-correlated captures of the OUT selector
+across both a non-FS unit and the Pro FS (patch 6); and zipper-noise-
+free wheel turns against a looped-back level measurement (patch 6) -
+each detailed in the affected patch's own commit message.
 
 Disclosure: as with previous versions, the reverse-engineering and
 substantial portions of the kernel implementation were written with
@@ -115,16 +147,16 @@ Ismaïl Bahloul (8):
  sound/usb/Kconfig                          |   20 +
  sound/usb/Makefile                         |    2 +-
  sound/usb/babyfacepro/Makefile             |    4 +
- sound/usb/babyfacepro/babyfacepro-ctl.c    | 3585 ++++++++++++++++++++
- sound/usb/babyfacepro/babyfacepro.c        | 1546 +++++++++
- sound/usb/babyfacepro/babyfacepro.h        |  483 +++
- 9 files changed, 5807 insertions(+), 1 deletion(-)
+ sound/usb/babyfacepro/babyfacepro-ctl.c    | 3775 ++++++++++++++++++++
+ sound/usb/babyfacepro/babyfacepro.c        | 1700 +++++++++
+ sound/usb/babyfacepro/babyfacepro.h        |  522 +++
+ 9 files changed, 6190 insertions(+), 1 deletion(-)
  create mode 100644 Documentation/sound/cards/babyface-pro.rst
  create mode 100644 sound/usb/babyfacepro/Makefile
  create mode 100644 sound/usb/babyfacepro/babyfacepro-ctl.c
  create mode 100644 sound/usb/babyfacepro/babyfacepro.c
  create mode 100644 sound/usb/babyfacepro/babyfacepro.h
 
--- 
+--
 2.55.0
 

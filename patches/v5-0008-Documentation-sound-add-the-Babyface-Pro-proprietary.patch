@@ -1,4 +1,4 @@
-From f32711b646c7724daa56caaad5a99fb09830c128 Mon Sep 17 00:00:00 2001
+From 76d9b1a8a00dbf0a80f972a1e40c206939ab660d Mon Sep 17 00:00:00 2001
 From: =?UTF-8?q?Isma=C3=AFl=20Bahloul?= <i.bahloul01@gmail.com>
 Date: Wed, 16 Sep 2026 22:09:36 +0100
 Subject: [RFC PATCH v5 8/8] Documentation: sound: add the Babyface Pro
