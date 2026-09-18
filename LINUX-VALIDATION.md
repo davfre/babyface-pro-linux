@@ -58,10 +58,35 @@ sudo target/debug/examples/probe master 2000 # expect 0 dB (master curve 0x2000)
 
 ## 3. Sample-rate change (DECODED + HARDWARE-VERIFIED 2026-08-22 — ratetest.c)
 
-Mid-session rate change = **`SET_INTERFACE(5, alt N)` ONLY** — no
-vendor writes, no 0x1B. Alt table (cap_rates2.pcap, clean 9-rate sweep):
+**CORRECTED 2026-09-16 (ratesweep, 2015 Babyface Pro; RME Windows
+driver captures 2026-09-14).**  A rate change is the **family
+register** `0x10 wValue=(family<<4) wIndex=0x0030` (0/1/2 = 32k /
+44.1k / 48k family), the settings word (`0x10 0x0441 0x05CF`), and
+`SET_INTERFACE(5, alt)` only when the multiplier changes.  The alt is
+the **x1 / x2 / x4 speed**, not a bandwidth class:
 
-| Alt | Packet | Rates |
+| Alt | Packet | Rates (family 32k / 44.1k / 48k) |
+|---|---|---|
+| 1 | 448 B | 32 / 44.1 / 48 kHz |
+| 2 | 640 B | 64 / 88.2 / 96 kHz |
+| 3 | 1024 B | 128 / 176.4 / 192 kHz |
+
+The `0x1B` quad is not part of a rate change; it is the varispeed
+ratio (section 5).  `0x11` byte 3 = `(multiplier << 2) | family`.  The
+cold-init write `0x10 0x0021 0x05FF` sets the family to 48 kHz
+(`0x05FF = 0x0030 | 0x05CF`), so it must come before, or carry, the
+intended family.  Full write-up: `tools/usbdump/PROTOCOL.md`, "Sample
+rate / clock", correction of 2026-09-16.  The kernel driver does this
+from `fix/pcm-sample-rate-clock` (PR #7) on; all nine rates measured
+through ALSA within 0.05 %.
+
+The 2026-08-22 text below is kept as the record; its table (64 / 88.2
+on alt 1, 128 on alt 2) and its "SET_INTERFACE only" claim are wrong.
+
+~~Mid-session rate change = **`SET_INTERFACE(5, alt N)` ONLY** — no
+vendor writes, no 0x1B.~~ Alt table (cap_rates2.pcap, clean 9-rate sweep):
+
+| Alt | Packet | Rates (2026-08-22, WRONG for 64 / 88.2 / 128) |
 |---|---|---|
 | 1 | 448 B | 32 / 44.1 / 48 / 64 / 88.2 kHz |
 | 2 | 640 B | 96 / 128 kHz |
@@ -73,8 +98,10 @@ Test on Linux:
 2. Send `SET_INTERFACE(5, alt 2)` mid-session (reuse the existing
    alt-setting code; there is no vendor rate write).
 3. Verify with the **`0x11` readback**: byte 3 should be `0x04`
-   (2^alt: alt 1 → 0x02, alt 2 → 0x04, alt 3 → 0x08) — the readback
-   carries a poll counter in the low bits, check `byte3 & 0x0F`.
+   ~~(2^alt: alt 1 → 0x02, alt 2 → 0x04, alt 3 → 0x08) — the readback
+   carries a poll counter in the low bits, check `byte3 & 0x0F`~~
+   (corrected 2026-09-16: byte 3 = `(multiplier << 2) | family`, so
+   0x04 is alt 2 with the 32k family, 0x06 alt 2 with the 48k family).
 4. **Measure the real stream rate**: the device is the clock master,
    so count the IN bytes over a fixed wall-clock window (2-5 s) and
    divide by the frame size → frames/s. At 96 kHz expect ~2× the 48 kHz
@@ -103,6 +130,19 @@ optical input). Then back to `0x0001` → 0x40. (0x80 is the clock
 no-lock state, NOT "streaming active" — the old notes had it wrong.)
 
 ## 5. Pitch / varispeed (DECODED + HARDWARE-VERIFIED 2026-08-23 — pitchest.c / tonepitch.c)
+
+**CORRECTED 2026-09-16.**  The quad is a pitch *ratio* on top of the
+family-derived rate, the same bytes at every sample rate, sticky until
+rewritten; the 48 kHz cold-plug quad is x1.0.  Only bank 2 is read on
+the 2015 unit (banks 0, 1, 3 inert — hence "the fractions do not
+matter" below).  Bank 2 is a 24-bit period word, 1.0 = 2^14 x 25 MHz /
+48000 = 8533333.33; RME's host truncates the word to Q16 (48 kHz:
+`0x8234D3` against the exact `0x823555`), and the truncated word
+measures +14 ppm against an NTP-disciplined clock where the exact word
+measures -1 ppm.  Encoding and measurements:
+`tools/usbdump/PROTOCOL.md`, "Pitch / varispeed", correction of
+2026-09-16.  The "rate x bank0 = const" below holds only because bank 0
+is a fixed multiple of bank 2 in the Q16 model.
 
 Pitch writes a **0x1B quad** (4 banks, wIdx low byte = bank 0-3). The
 quads shift the **device clock**: the IN-stream byte rate moves with
