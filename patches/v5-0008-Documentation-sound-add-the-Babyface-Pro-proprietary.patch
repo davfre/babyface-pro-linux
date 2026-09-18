@@ -99,7 +99,7 @@ index 000000000..d67f8c6fe
 +in-tree reference.
 +
 +The one property that shapes the rest of the driver: **almost nothing
-+here is readable back**.  The 0x17 request returns the front-panel
++here can be read back**.  The 0x17 request returns the front-panel
 +and preamp state, but the crosspoint matrix, the output masters, the
 +routing flags and the clock all have to be tracked host-side - the
 +device will accept a write blindly and never confirm what it actually
