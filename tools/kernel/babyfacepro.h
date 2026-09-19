@@ -315,13 +315,18 @@ struct snd_usb_babyface {
 	unsigned int frame_bytes;	/* 56/40/32 for alt 1/2/3 */
 	unsigned int rate;
 	unsigned int alt;
-	int stream_users;		/* PCM substreams sharing the stream */
+	int stream_users;		/* substreams set up (hw_params..hw_free) */
+	bool stream_setup[2];		/* per direction, counted in stream_users */
 	bool streaming;			/* URBs actually in flight */
 	bool shutdown;
 	atomic_t urb_err;		/* consecutive bad URBs (stops the stream) */
 	struct work_struct stream_work;
 
-	struct snd_pcm_substream *subs[2];
+	/* Set in open() and cleared in close() under ->lock.  The URB
+	 * handlers and babyface_pcm_stop_both() read it under
+	 * rcu_read_lock(); close() waits them out with synchronize_rcu().
+	 */
+	struct snd_pcm_substream __rcu *subs[2];
 	unsigned long hw_ptr[2];
 	unsigned long prev_period[2];
 
