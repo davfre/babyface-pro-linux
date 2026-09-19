@@ -295,6 +295,20 @@ extern const u8 bf_xpoint_block[6];
 #define BF_GAIN_COARSE_MAX		20
 #define BF_GAIN_FINE_SHIFT		5
 
+/* Level meters (babyfacepro-meter.c): one accumulator per PCM
+ * direction, indexed by PCM channel.  Guarded by meter_lock; the URB
+ * completion handlers add to it and a control read drains it.
+ */
+#define BF_METER_CHANNELS		12
+
+struct bf_meter {
+	u32 peak[BF_METER_CHANNELS];	/* largest |sample| */
+	u64 sum_sq[BF_METER_CHANNELS];	/* sum of (|sample| >> 4)^2 */
+	u32 frames;			/* frames in sum_sq */
+	u32 run[BF_METER_CHANNELS];	/* current full-scale run */
+	u32 overs[BF_METER_CHANNELS];	/* longest full-scale run */
+};
+
 struct snd_usb_babyface {
 	struct snd_card *card;
 	struct usb_device *dev;
@@ -439,6 +453,10 @@ struct snd_usb_babyface {
 	struct snd_kcontrol *panel_kctl[7]; /* for snd_ctl_notify */
 	struct snd_kcontrol *trim_kctl[4];  /* for snd_ctl_notify */
 	struct snd_kcontrol *dim_kctl;      /* for snd_ctl_notify */
+
+	/* level meters (babyfacepro-meter.c), [SNDRV_PCM_STREAM_*] */
+	spinlock_t meter_lock;
+	struct bf_meter meter[2];
 };
 
 struct bf_saved {
@@ -532,6 +550,14 @@ int babyface_create_panel(struct snd_usb_babyface *chip);
 void babyface_panel_start(struct snd_usb_babyface *chip);
 void babyface_panel_stop(struct snd_usb_babyface *chip);
 void babyface_panel_work(struct work_struct *work);
+
+/* -- babyfacepro-meter.c --------------------- */
+extern const u8 bf_capture_word_map[BF_METER_CHANNELS];
+void bf_meter_capture(struct snd_usb_babyface *chip, const u8 *data,
+		      unsigned int frames);
+void bf_meter_playback(struct snd_usb_babyface *chip, const u8 *data,
+		       unsigned int frames);
+int babyface_create_meters(struct snd_usb_babyface *chip);
 
 /* -- babyfacepro.c ------------------------ */
 void bf_state_save(struct snd_usb_babyface *chip);

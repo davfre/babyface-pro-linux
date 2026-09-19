@@ -7,8 +7,8 @@
  * the card lifecycle (probe/disconnect/PM/module entry).
  *
  * See babyfacepro.h for the shared device state and register map,
- * and babyfacepro-ctl.c for the ALSA control surface (mixer, front
- * panel, DSP EQ).
+ * babyfacepro-ctl.c for the ALSA control surface (mixer, front
+ * panel, DSP EQ), and babyfacepro-meter.c for the level meters.
  */
 #include <linux/log2.h>
 #include <linux/math64.h>
@@ -658,19 +658,19 @@ static bool babyface_capture_copy(struct snd_usb_babyface *chip,
 
 		dst = rt->dma_area + frames_to_bytes(rt, pos);
 		for (i = 0; i < chans; i++) {
-			/* Channel map: app ch0-3 = device words 0-3 (AN1-4);
-			 * app ch4-9 = words 6-11 (ADAT/SPDIF); app ch10/11 =
-			 * words 12/13 = a FIXED-GAIN playback tap (observed
-			 * 2026-08-25: the playback echoes there at ~-27 dB,
-			 * independent of the output masters - NOT the output
-			 * bus; the ADAT/SPDIF range is words 6-11 only).  The
-			 * device words 4/5 are a fixed marker, not audio -
-			 * skipped.  At 96/192 kHz the frame has fewer words;
-			 * missing ones read as zero.
+			/* Channel map (bf_capture_word_map): app ch0-3 =
+			 * device words 0-3 (AN1-4); app ch4-9 = words 6-11
+			 * (ADAT/SPDIF); app ch10/11 = words 12/13 = a
+			 * FIXED-GAIN playback tap (observed 2026-08-25: the
+			 * playback echoes there at ~-27 dB, independent of
+			 * the output masters - NOT the output bus; the
+			 * ADAT/SPDIF range is words 6-11 only).  The device
+			 * words 4/5 are a fixed marker, not audio - skipped.
+			 * At 96/192 kHz the frame has fewer words; missing
+			 * ones read as zero.
 			 */
-			static const u8 map[12] = { 0, 1, 2, 3, 6, 7, 8, 9,
-						   10, 11, 12, 13 };
-			u8 wi = i < 12 ? map[i] : 0xff;
+			u8 wi = i < BF_METER_CHANNELS ?
+				bf_capture_word_map[i] : 0xff;
 			s32 s = 0;
 
 			if (wi < words) {
@@ -784,16 +784,20 @@ static void babyface_complete_in(struct urb *urb)
 	}
 	atomic_set(&chip->urb_err, 0);
 
+	/* Meter every IN URB, not only while capture runs, so input
+	 * levels show during playback-only sessions.
+	 */
+	frames = urb->actual_length / chip->frame_bytes;
+	if (frames)
+		bf_meter_capture(chip, urb->transfer_buffer, frames);
+
 	subs = READ_ONCE(chip->subs[SNDRV_PCM_STREAM_CAPTURE]);
 	if (subs) {
 		snd_pcm_stream_lock_irqsave(subs, flags);
-		if (snd_pcm_running(subs)) {
-			frames = urb->actual_length / chip->frame_bytes;
-			if (frames)
-				crossed = babyface_capture_copy(chip, subs,
-								urb->transfer_buffer,
-								frames);
-		}
+		if (snd_pcm_running(subs) && frames)
+			crossed = babyface_capture_copy(chip, subs,
+							urb->transfer_buffer,
+							frames);
 		snd_pcm_stream_unlock_irqrestore(subs, flags);
 		if (crossed)
 			snd_pcm_period_elapsed(subs);
@@ -844,6 +848,9 @@ static void babyface_complete_out(struct urb *urb)
 		/* No consumer: silence the OUT frames. */
 		memset(urb->transfer_buffer, 0, urb->transfer_buffer_length);
 	}
+	/* Meter the buffer as it goes out. */
+	bf_meter_playback(chip, urb->transfer_buffer,
+			  urb->transfer_buffer_length / chip->frame_bytes);
 resubmit:
 	ret = usb_submit_urb(urb, GFP_ATOMIC);
 	if (ret < 0) {
@@ -1420,6 +1427,7 @@ static int babyface_probe(struct usb_interface *intf,
 	chip->preamp = BF_PREAMP_BASE;
 	mutex_init(&chip->mutex);
 	spin_lock_init(&chip->lock);
+	spin_lock_init(&chip->meter_lock);
 	atomic_set(&chip->urb_err, 0);
 	INIT_WORK(&chip->stream_work, babyface_stream_work);
 	INIT_DELAYED_WORK(&chip->panel_work, babyface_panel_work);
@@ -1574,6 +1582,12 @@ static int babyface_probe(struct usb_interface *intf,
 	err = babyface_create_eq(chip);
 	if (err < 0) {
 		dev_err(&intf->dev, "EQ control creation failed: %d\n", err);
+		goto error;
+	}
+
+	err = babyface_create_meters(chip);
+	if (err < 0) {
+		dev_err(&intf->dev, "meter control creation failed: %d\n", err);
 		goto error;
 	}
 

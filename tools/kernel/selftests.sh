@@ -23,6 +23,23 @@ for t in fader_selftest master_selftest disp_selftest eq_selftest; do
 	fi
 done
 
+echo "== meter selftest =="
+# Builds babyfacepro-meter.c itself against stubs; see meter_selftest.c.
+d=$(mktemp -d)
+mkdir "$d/linux" "$d/sound"
+for h in bits kernel math math64 spinlock unaligned usb; do : > "$d/linux/$h.h"; done
+: > "$d/sound/control.h"; : > "$d/sound/core.h"; : > "$d/babyfacepro.h"
+cp babyfacepro-meter.c meter_selftest.c "$d"
+if gcc -O2 -Wall -I "$d" -o "$d/meter_selftest" "$d/meter_selftest.c" -lm &&
+   "$d/meter_selftest" > /tmp/meter_selftest.out 2>&1; then
+	echo "  PASS  meter_selftest"
+else
+	echo "  FAIL  meter_selftest"
+	tail -5 /tmp/meter_selftest.out
+	FAIL=1
+fi
+rm -rf "$d"
+
 echo "== module build =="
 KSRC=/lib/modules/$(uname -r)/build
 if make LLVM=1 -C "$KSRC" M="$PWD" modules > /tmp/kbuild.out 2>&1; then
@@ -36,7 +53,7 @@ fi
 echo "== checkpatch =="
 KP="$KSRC/scripts/checkpatch.pl"
 if [ -x "$KP" ]; then
-	for f in babyfacepro.c babyfacepro-ctl.c babyfacepro.h; do
+	for f in babyfacepro.c babyfacepro-ctl.c babyfacepro-meter.c babyfacepro.h; do
 		if $KP --no-tree --strict -f "$f" 2>&1 | grep -qE 'ERROR|WARNING'; then
 			echo "  WARN  $f (see checkpatch below)"
 			$KP --no-tree --strict -f "$f" 2>&1 | grep -E 'ERROR|WARNING'
