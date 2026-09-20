@@ -1084,24 +1084,20 @@ static const struct snd_pcm_hardware babyface_pcm_hw = {
 	.periods_max = 16,
 };
 
-/* Is the OTHER direction actually transferring?  Not "is it open": a client
- * that has the device open but has not started must still be able to pick the
+/* Does the OTHER direction hold the clock?  The session lives from the
+ * first prepare to the last hw_free, so a substream that is set up but not
+ * running - between an xrun and the sound server's restart, say - still
+ * owns the rate it negotiated.  Not "is it open": a client that has the
+ * device open but has not called hw_params must still be able to pick the
  * rate, so that an application opening playback and capture before starting
  * either one can take both to 96 kHz.
+ *
+ * Caller holds chip->mutex, which is what stream_setup[] is updated under.
  */
-static bool bf_other_running(struct snd_usb_babyface *chip,
-			     struct snd_pcm_substream *subs)
+static bool bf_other_holds_clock(struct snd_usb_babyface *chip,
+				 struct snd_pcm_substream *subs)
 {
-	struct snd_pcm_substream *other = READ_ONCE(chip->subs[!subs->stream]);
-	unsigned long flags;
-	bool running;
-
-	if (!other)
-		return false;
-	snd_pcm_stream_lock_irqsave(other, flags);
-	running = snd_pcm_running(other);
-	snd_pcm_stream_unlock_irqrestore(other, flags);
-	return running;
+	return chip->stream_setup[!subs->stream];
 }
 
 static int babyface_pcm_open(struct snd_pcm_substream *subs)
@@ -1149,7 +1145,7 @@ static int babyface_pcm_open(struct snd_pcm_substream *subs)
 	 * doing any conversion - never the driver.
 	 */
 	mutex_lock(&chip->mutex);
-	locked = chip->streaming ? chip->rate : 0;
+	locked = chip->stream_users ? chip->rate : 0;
 	mutex_unlock(&chip->mutex);
 	if (locked) {
 		ret = snd_pcm_hw_constraint_minmax(rt, SNDRV_PCM_HW_PARAM_RATE,
@@ -1217,9 +1213,9 @@ static int babyface_pcm_hw_params(struct snd_pcm_substream *subs,
 		 * because a negotiated rate is never revised for a live
 		 * substream.
 		 */
-		if (bf_other_running(chip, subs)) {
+		if (bf_other_holds_clock(chip, subs)) {
 			dev_dbg(&chip->dev->dev,
-				"rate %u Hz refused: %u Hz stream running\n",
+				"rate %u Hz refused: %u Hz stream set up\n",
 				r->rate, chip->rate);
 			ret = -EBUSY;
 			goto out;
