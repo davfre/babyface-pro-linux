@@ -1203,6 +1203,11 @@ static int babyface_pcm_hw_params(struct snd_pcm_substream *subs,
 	}
 
 	mutex_lock(&chip->mutex);
+	/* disconnect() has let go of the interface: do not re-point it. */
+	if (chip->shutdown) {
+		ret = -ENODEV;
+		goto out;
+	}
 	if (r->rate != chip->rate) {
 		/* The constraint in open() normally means nobody asks for a
 		 * rate other than the running one.  It can still happen, when
