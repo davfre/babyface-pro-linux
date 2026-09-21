@@ -1659,6 +1659,15 @@ static void babyface_disconnect(struct usb_interface *intf)
 	bf_state_save(chip);
 
 	chip->shutdown = true;
+	/* Kill the session before cancelling the work: the URB handlers
+	 * queue it, and an unplug is exactly when they see errors.  Taking
+	 * the mutex also waits out a prepare that was already past its
+	 * ->shutdown check.
+	 */
+	mutex_lock(&chip->mutex);
+	if (chip->streaming)
+		babyface_stream_kill(chip);
+	mutex_unlock(&chip->mutex);
 	cancel_work_sync(&chip->stream_work);
 	babyface_panel_stop(chip);
 	/* Balance the probe()-time usb_disable_autosuspend(): the usb_device
@@ -1670,10 +1679,6 @@ static void babyface_disconnect(struct usb_interface *intf)
 	/* Wake apps blocked in read/write: the card is going away. */
 	dev_info(&chip->dev->dev, "disconnect: stopping PCM substreams\n");
 	babyface_pcm_stop_both(chip, SNDRV_PCM_STATE_DISCONNECTED);
-	mutex_lock(&chip->mutex);
-	if (chip->streaming)
-		babyface_stream_kill(chip);
-	mutex_unlock(&chip->mutex);
 
 	snd_card_disconnect(chip->card);
 	/* NEVER snd_card_free() here: it blocks until the last user
@@ -1696,12 +1701,13 @@ static int babyface_suspend(struct usb_interface *intf, pm_message_t message)
 		if (sdev->type == SNDRV_DEV_PCM)
 			snd_pcm_suspend_all(sdev->device_data);
 	}
-	cancel_work_sync(&chip->stream_work);
-	babyface_panel_stop(chip);
+	/* The URB handlers queue the work: kill them first. */
 	mutex_lock(&chip->mutex);
 	if (chip->streaming)
 		babyface_stream_kill(chip);
 	mutex_unlock(&chip->mutex);
+	cancel_work_sync(&chip->stream_work);
+	babyface_panel_stop(chip);
 	return 0;
 }
 
