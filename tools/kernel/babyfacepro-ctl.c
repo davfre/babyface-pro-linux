@@ -2665,10 +2665,15 @@ static void bf_panel_tick(struct snd_usb_babyface *chip)
 	if (time_is_after_jiffies(chip->panel_start + 3 * HZ))
 		chip->panel_select = 3;
 
-	/* Button flash (byte3 over the 0x40 idle base). */
+	/* Button flash (byte3 over the 0x40 idle base).  Notify on the
+	 * edge, as the other flash-driven controls do, so a subscriber sees
+	 * each press once rather than on every poll while it is held.
+	 */
 	btn = bf_panel_button_decode(st[3]);
-	if (btn)
+	if (btn && chip->panel_prev[3] != st[3]) {
 		chip->panel_button = btn;
+		bf_panel_notify(chip, BF_PANEL_KCTL_BUTTON);
+	}
 
 	/* Wheel: signed 4-bit wrap delta of the byte2 low nibble - only
 	 * while the mode class is unchanged.  A mode switch (IN 0x4x ->
