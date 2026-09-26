@@ -21,13 +21,14 @@
 #define BF_EQ_Q27	(1 << 27)
 #define BF_EQ_LC_OFF	0x04000000
 
-static const int64_t bf_atan_tab[24] = {
+static const int64_t bf_atan_tab[28] = {
 	0x6487ED5, 0x3B58CE1, 0x1F5B760, 0xFEADD5,
 	0x7FD56F, 0x3FFAAB, 0x1FFF55, 0xFFFEB,
 	0x7FFFD, 0x40000, 0x20000, 0x10000,
 	0x8000, 0x4000, 0x2000, 0x1000,
 	0x800, 0x400, 0x200, 0x100,
 	0x80, 0x40, 0x20, 0x10,
+	0x8, 0x4, 0x2, 0x1,
 };
 
 /* ---- fixed-point helpers (Q27 in/out, int64_t intermediates) ---- */
@@ -279,7 +280,7 @@ int main(void)
 					if (maxerr > 2048) {
 						printf("ERR type=%d f=%d g=%d q=%d maxerr=%lld LSB\n",
 						       type, freqs[fi], gains[gi],
-						       qs[qi], maxerr);
+						       qs[qi], (long long)maxerr);
 						fails++;
 					}
 				}
