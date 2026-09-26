@@ -3223,6 +3223,11 @@ void bf_eq_band_words(s32 *w, int type, s32 freq_hz, s32 q100,
 		w[1] = 0;
 		w[2] = 0;
 		w[3] = 0;
+		/* w[4] is the shared scale bf_eq_update_strip() reads when the
+		 * band has a type and a gain but no Q yet (Q defaults to 0).
+		 * Leaving it unwritten uploaded a garbage shared scale.
+		 */
+		w[4] = BF_EQ_Q27;
 		return;
 	}
 
