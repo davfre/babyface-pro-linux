@@ -652,12 +652,14 @@ sleep 4; amixer -c 3 sget ...                              # state restored
 Three fixes landed together to make the kernel sink behave like a normal
 sound card in PipeWire:
 
-1. **Stream start = full cold-init + state restore.**  The firmware only
-   validates a session preceded by the complete cold-init; without it the
-   outputs stay silent.  The init wipes the mixer registers, so the
-   cached state (preamp, gains, masters, crosspoints, pitch) is re-applied
-   right after the arm — the session starts at the user's levels and the
-   output is not muted at stream start.
+1. **Stream start = full cold-init + state restore.**  (Superseded
+   2026-09-26: a session start no longer runs the cold init, see below.)
+   The firmware only validates a session preceded by the complete
+   cold-init; without it the outputs stay silent.  The init wipes the
+   mixer registers, so the cached state (preamp, gains, masters,
+   crosspoints, pitch) is re-applied right after the arm — the session
+   starts at the user's levels and the output is not muted at stream
+   start.
 2. **Rate change = stop URBs + restart instead of -EBUSY.**  A
    `hw_params` at a different rate while streaming used to fail with
    -EBUSY, which killed the PW sink whenever another stream (e.g. a 44.1k
@@ -838,6 +840,16 @@ contents).  `stream_work` is left with the persistent-URB-error path.
 Because the URBs now outlive a substream closed while the other
 direction runs, the handlers read `chip->subs[]` under RCU and `close`
 calls `synchronize_rcu()`.
+
+## 2026-09-26 — a session start sends what the Windows driver sends
+
+Every session start ran `bf_cold_init()` (the 0x16 clear of registers 0x00-0x3d, the varispeed quad, the rate/settings write, keepalives), then `babyface_restore_state()` and `bf_state_apply_flags()` to put back what the clear had wiped.  Timed per phase on the hardware at 48 kHz, that is 1.06 s per start: clear 135 ms, the rest of the cold init 31 ms, trigger pair 4 ms, URBs and arm 2 ms, state restore 805 ms, flags 85 ms.  The WirePlumber probe after hotplug opens the device several times and pays this each time.  These times were measured through a chain of three USB hubs, where each control write took about 2.25 ms; on a direct port a write takes about 0.25 ms (the probe's cold init, 74 writes, in 18 ms), the same spacing as in the Windows capture.
+
+The RME Windows driver sends no init at a stream start (`cap_audio.pcap`, `tools/usbdump/PROTOCOL.md`): the trigger pair `0x10 0x8000` + `0x1D`, the ISO endpoints, the arm `0x14 0xC000`.  The 0x16 clears appear only in the cold-plug capture.  A session start now does the same, preceded by the rate write (`bf_clock_write()`: family register and settings word, which is also what Windows sends on a rate change).  The cold init and the full restore stay at probe and resume, where the device state is unknown; both now also re-apply the flags, which the next session start used to do.
+
+Checked with a patch cable from the PH3/4 jack into IN3/IN4, only PH3/4 live and no input routed to any output, one session per measurement: the tone arrives at the same level with the old and the new start (-29.4 dBFS both channels) at 48, 44.1 and 32 kHz and after a rate change between sessions; a master change made while no session runs shows up in the next session (+10.0 dB, and back).  All nine rates measure correct through ALSA (`ratecheck`, within +0.003 %).  A session start takes about 1 ms on a direct port (9-13 ms through the hub chain).
+
+One thing the cold init did cover: a session triggered less than about 15 ms after the previous one stopped comes up with the outputs silent (and nothing on the FX send), for the whole session.  On a direct port, with back-to-back `pcmxrun` runs and a minimum time from the stop to the trigger: 12 ms left 18-20 of 20 sessions silent, 14 ms 4-9 of 20, and 16 ms or more none, at 32, 44.1 and 48 kHz alike.  Through the hub chain the slower control writes before the trigger hid part of that window.  Sending the Windows session stop `0x13 0xC000` at the stop does not help.  The 1 s cold init always covered this window.  `babyface_stream_start()` now waits until `BF_SESSION_GAP_MS` (50 ms) have passed since the last stop; only a session restarted at once pays it.
 
 ## Protocol knowledge → kernel equivalents (from the RE)
 

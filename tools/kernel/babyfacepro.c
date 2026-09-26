@@ -10,6 +10,7 @@
  * and babyfacepro-ctl.c for the ALSA control surface (mixer, front
  * panel, DSP EQ).
  */
+#include <linux/delay.h>
 #include <linux/log2.h>
 #include <linux/math64.h>
 #include <linux/module.h>
@@ -216,9 +217,10 @@ int bf_vendor_write_cycle(struct snd_usb_babyface *chip, u8 req, u16 val, u16 id
 	return bf_vendor_write(chip, req, val, idx | flag);
 }
 
-/* The cold-start session init (cap_coldplug.pcap), verbatim from the
- * user-space reference (protocol::streaming_init).  Without it the
- * firmware never validates a stream.
+/* The cold-start init (cap_coldplug.pcap), verbatim from the user-space
+ * reference (protocol::streaming_init).  Run at probe and after resume,
+ * where the device state is unknown; a session start does not need it
+ * (see babyface_stream_start()).
  */
 int bf_cold_init(struct snd_usb_babyface *chip)
 {
@@ -920,6 +922,7 @@ void babyface_stream_kill(struct snd_usb_babyface *chip)
 		usb_kill_urb(chip->urbs_in[i]);
 		usb_kill_urb(chip->urbs_out[i]);
 	}
+	chip->stream_stopped = ktime_get();
 }
 
 /* Stop both PCM substreams (if running) so apps blocked in read/write
@@ -959,34 +962,43 @@ void babyface_pcm_stop_both(struct snd_usb_babyface *chip, snd_pcm_state_t state
  * same pattern as the FireWire audio drivers:
  *
  *  - hw_params counts a substream as a user of the session;
- *  - prepare starts the session if it is not running: cold-init + the
- *    session trigger pair, then the interrupt URBs (nurbs in each
- *    direction) are submitted, the session is armed and the cached
- *    mixer state re-applied;
+ *  - prepare starts the session if it is not running: the rate write
+ *    and the session trigger pair, then the interrupt URBs (nurbs in
+ *    each direction) are submitted and the session is armed;
  *  - trigger START/STOP only decides whether the URB handlers move that
  *    substream's audio.  The URBs keep running either way, carrying
  *    silence while nothing plays;
  *  - hw_free drops the user, and the last one stops the session.
  *
  * A sound server restarts its streams with prepare + START after every
- * xrun.  That must not repeat the cold-init: it takes long enough that
- * PipeWire does not ride through it, and an already connected client
- * stays silent afterwards.
+ * xrun.  That must not restart the session: PipeWire does not ride
+ * through it, and an already connected client stays silent afterwards.
  */
 
 /* Start the session.  Caller holds chip->mutex. */
 static int babyface_stream_start(struct snd_usb_babyface *chip)
 {
 	unsigned int urbsize = chip->frame_bytes * chip->frames_per_urb;
+	s64 since;
 	int i, ret;
 
-	/* The firmware only validates a stream session that is
-	 * preceded by the full cold-init (the user-space reference
-	 * sends streaming_init at every session start - without it
-	 * the outputs stay silent).  The 0x16 clear wipes the mixer
-	 * registers, so the cached state is re-applied after the arm.
+	/* A session triggered right after the previous one stopped starts
+	 * with the outputs silent: give the device BF_SESSION_GAP_MS.
+	 * Only a stop followed at once by a new setup waits (an application
+	 * restarting, a probe opening the device repeatedly).
 	 */
-	ret = bf_cold_init(chip);
+	since = ktime_ms_delta(ktime_get(), chip->stream_stopped);
+	if (since < BF_SESSION_GAP_MS)
+		msleep(BF_SESSION_GAP_MS - since);
+
+	/* A session start is what the RME Windows driver sends
+	 * (cap_audio): the trigger pair, the URBs, the arm.  The device
+	 * keeps its mixer state between sessions, so nothing is cleared
+	 * or re-applied here; the cold init runs at probe and resume
+	 * only.  The rate is written first: hw_params only re-points the
+	 * speed multiplier.
+	 */
+	ret = bf_clock_write(chip);
 	if (ret < 0)
 		goto err;
 
@@ -1045,21 +1057,6 @@ static int babyface_stream_start(struct snd_usb_babyface *chip)
 	}
 	/* Session arm (cap_audio frame 5829, after the URBs). */
 	ret = bf_vendor_write(chip, BF_REQ_SESSION_ARM, 0x0000, 0xc000);
-	if (ret < 0)
-		goto err;
-
-	/* The cold init above cleared the mixer registers; push the
-	 * cached state back (preamp, gains, masters, crosspoints,
-	 * pitch) so the session starts at the user's levels.
-	 */
-	ret = babyface_restore_state(chip);
-	if (ret < 0)
-		goto err;
-
-	/* The 0x16 clear also wipes the flag registers (loopback,
-	 * AN1>2, stereo link, width, FX send, MS) - re-apply them.
-	 */
-	ret = bf_state_apply_flags(chip);
 	if (ret < 0)
 		goto err;
 
@@ -1557,6 +1554,14 @@ static int babyface_probe(struct usb_interface *intf,
 			dev_err(&intf->dev, "default mixer restore failed: %d\n", err);
 			goto error;
 		}
+		/* The cold init cleared the flag registers as well. */
+		mutex_lock(&chip->mutex);
+		err = bf_state_apply_flags(chip);
+		mutex_unlock(&chip->mutex);
+		if (err < 0) {
+			dev_err(&intf->dev, "flag restore failed: %d\n", err);
+			goto error;
+		}
 	} else if (err < 0) {
 		dev_err(&intf->dev, "mixer state restore failed: %d\n", err);
 		goto error;
@@ -1767,6 +1772,9 @@ static int babyface_resume(struct usb_interface *intf)
 	if (err < 0)
 		goto out;
 	err = babyface_restore_state(chip);
+	if (err < 0)
+		goto out;
+	err = bf_state_apply_flags(chip);
 out:
 	mutex_unlock(&chip->mutex);
 	if (!err)
