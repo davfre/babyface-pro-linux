@@ -452,8 +452,15 @@ int bf_state_apply_flags(struct snd_usb_babyface *chip)
 			return ret;
 	}
 
-	/* Re-apply an engaged DIM (the fixed -20 dB Phones pair + flag). */
+	/* Re-apply an engaged DIM (the fixed -20 dB Phones pair + flag).  The
+	 * level DIM releases back to is not persisted: it always tracks the
+	 * Phones master while DIM is engaged, so rebuild it here - otherwise a
+	 * DIM released after a re-probe or resume would drive Phones to
+	 * silence (dim_saved still zero on the fresh chip).
+	 */
 	if (chip->dim) {
+		chip->dim_saved[0] = chip->master[1][0];
+		chip->dim_saved[1] = chip->master[1][1];
 		ret = bf_vendor_write(chip, BF_REQ_GAIN, 0xcb,
 				      BF_REG_MASTER_8 + 2 * 1);
 		if (ret < 0)
