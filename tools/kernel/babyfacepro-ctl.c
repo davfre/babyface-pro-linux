@@ -2215,9 +2215,22 @@ static void bf_panel_mix_wheel(struct snd_usb_babyface *chip, int delta)
 	mutex_unlock(&chip->mutex);
 }
 
+/* A muted output ignores the wheel, as it does under TotalMix.  The
+ * firmware still moves the analog level by itself, up from the mute
+ * code, so the output would become faintly audible while the mute switch
+ * still reads off: put the mute back.  Caller holds the mutex.
+ */
+static void bf_panel_remute(struct snd_usb_babyface *chip, int out)
+{
+	bf_vendor_write(chip, BF_REQ_GAIN, BF_MASTER_MUTE,
+			BF_REG_MASTER_8 + 2 * out);
+	bf_vendor_write(chip, BF_REQ_GAIN, BF_MASTER_MUTE,
+			BF_REG_MASTER_8 + 2 * out + 1);
+}
+
 /* Write an output's L/R masters (8-bit companions + 16-bit with the
  * transaction flag) and mirror into the cache - used by the balance
- * wheel.  Caller holds the mutex.
+ * wheel on an unmuted output.  Caller holds the mutex.
  */
 static void bf_panel_write_master(struct snd_usb_babyface *chip, int out,
 				  u16 l, u16 r)
@@ -2236,7 +2249,6 @@ static void bf_panel_write_master(struct snd_usb_babyface *chip, int out,
 			(BF_REG_MASTER_16 + 2 * out + 1) | flag);
 	chip->master[out][0] = l;
 	chip->master[out][1] = r;
-	chip->muted[out] = false;
 	/* A Phones change while DIM is engaged re-bases the restore. */
 	if (chip->dim && out == 1) {
 		chip->dim_saved[0] = l;
@@ -2259,9 +2271,9 @@ static void bf_panel_write_master(struct snd_usb_babyface *chip, int out,
  *
  * So while the wheel turns, only the 16-bit is written, and the cache
  * follows the firmware's own count so the ALSA controls read the real
- * level.  A muted output stays muted: only the cache moves.  Both
- * sides move by the louder side's step, so a balance (hold-SELECT) is
- * kept.  Same output mapping as the MIX wheel (Phones = canon 1,
+ * level.  A muted output ignores the wheel (see bf_panel_remute()).
+ * Both sides move by the louder side's step, so a balance (hold-SELECT)
+ * is kept.  Same output mapping as the MIX wheel (Phones = canon 1,
  * Opt = ADAT7/8 = canon 5, else AN1/2).
  */
 static void bf_panel_out_wheel_write(struct snd_usb_babyface *chip, int out,
@@ -2269,14 +2281,12 @@ static void bf_panel_out_wheel_write(struct snd_usb_babyface *chip, int out,
 {
 	u16 flag;
 
-	if (!chip->muted[out]) {
-		flag = bf_flag_cycle[chip->flag_cnt];
-		chip->flag_cnt = (chip->flag_cnt + 1) & 3;
-		bf_vendor_write(chip, BF_REQ_CROSSPOINT, l,
-				(BF_REG_MASTER_16 + 2 * out) | flag);
-		bf_vendor_write(chip, BF_REQ_CROSSPOINT, r,
-				(BF_REG_MASTER_16 + 2 * out + 1) | flag);
-	}
+	flag = bf_flag_cycle[chip->flag_cnt];
+	chip->flag_cnt = (chip->flag_cnt + 1) & 3;
+	bf_vendor_write(chip, BF_REQ_CROSSPOINT, l,
+			(BF_REG_MASTER_16 + 2 * out) | flag);
+	bf_vendor_write(chip, BF_REQ_CROSSPOINT, r,
+			(BF_REG_MASTER_16 + 2 * out + 1) | flag);
 	chip->master[out][0] = l;
 	chip->master[out][1] = r;
 	/* A Phones change while DIM is engaged re-bases the restore. */
@@ -2400,6 +2410,11 @@ static void bf_panel_out_wheel(struct snd_usb_babyface *chip, int delta)
 				ktime_divns(ktime_sub(now, chip->panel_poll_t), 2));
 
 	mutex_lock(&chip->mutex);
+	if (chip->muted[out]) {
+		bf_panel_remute(chip, out);
+		mutex_unlock(&chip->mutex);
+		return;
+	}
 	fast = chip->panel_out_wheel_t &&
 	       dir == chip->panel_out_wheel_dir &&
 	       out == chip->panel_out_wheel_out &&
@@ -2532,6 +2547,11 @@ static void bf_panel_balance_wheel(struct snd_usb_babyface *chip, int delta)
 	u16 fixed, varied;
 
 	mutex_lock(&chip->mutex);
+	if (chip->muted[out]) {
+		bf_panel_remute(chip, out);
+		mutex_unlock(&chip->mutex);
+		return;
+	}
 	/* Read under the lock so the L/R pair is consistent with the
 	 * master/mute/dim writers (they update chip->master[] under the
 	 * same mutex).
