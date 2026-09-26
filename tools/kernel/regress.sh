@@ -74,18 +74,21 @@ free_check() {
 	timeout 3 aplay -q -D "hw:$CARD,0" -f S32_LE -c 2 -r 48000 \
 		--period-size=256 --buffer-size=512 -d 1 "$SIL" >/dev/null 2>&1
 }
-if ! free_check; then
+# Free hw:<card>,0 from PipeWire; returns non-zero if it stays busy.
+free_device() {
+	free_check && return 0
 	SINK=$(node_id output)
 	SRC=$(node_id input)
 	echo "-- destroying RME PipeWire nodes (sink=$SINK src=$SRC) to free hw:$CARD,0"
 	[ -n "$SINK" ] && pw-cli destroy "$SINK"
 	[ -n "$SRC" ] && pw-cli destroy "$SRC"
 	sleep 2
-	if ! free_check; then
-		echo "FATAL: hw:$CARD,0 still busy after destroying the RME nodes."
-		echo "       Close whatever holds it (check: fuser -v /dev/snd/pcmC${CARD}D0*)"
-		exit 1
-	fi
+	free_check
+}
+if ! free_device; then
+	echo "FATAL: hw:$CARD,0 still busy after destroying the RME nodes."
+	echo "       Close whatever holds it (check: fuser -v /dev/snd/pcmC${CARD}D0*)"
+	exit 1
 fi
 
 # --- PCM sweep ------------------------------------------------------------
@@ -218,11 +221,25 @@ if [ "$DISCONNECT" = 1 ]; then
 			pkill -f bf_disc.wav
 		fi
 		rm -f /tmp/bf_disc_rc
-		# Rebind and verify the card + audio come back.
+		# Rebind and verify the card + audio come back.  The re-probed
+		# card is new to WirePlumber, which recreates the RME nodes and
+		# may hold the device by the time it is checked: wait for the
+		# card, free it again, then play.
 		echo "$DEV" | sudo tee "/sys/bus/usb/drivers/snd-usb-babyface-pro/bind" >/dev/null
-		sleep 3
-		if timeout 3 aplay -q -D "hw:$CARD,0" -f S32_LE -c 2 -r 48000 \
-		     --period-size=256 --buffer-size=512 -d 1 "$SIL" 2>/dev/null; then
+		i=0
+		while ! grep -q BabyfacePro /proc/asound/cards && [ "$i" -lt 50 ]; do
+			sleep 0.2; i=$((i + 1))
+		done
+		CARD=$(awk '/BabyfacePro/{print $1}' /proc/asound/cards | head -1)
+		sleep 2
+		if [ -z "$CARD" ]; then
+			FAIL=$((FAIL + 1)); FAILED="$FAILED rebind"
+			echo "  FAIL  rebind: card did not come back"
+		elif ! free_device; then
+			FAIL=$((FAIL + 1)); FAILED="$FAILED rebind(busy)"
+			echo "  FAIL  rebind: hw:$CARD,0 still busy after destroying the RME nodes"
+		elif timeout 3 aplay -q -D "hw:$CARD,0" -f S32_LE -c 2 -r 48000 \
+		     --period-size=256 --buffer-size=512 -d 1 "$SIL"; then
 			PASS=$((PASS + 1)); echo "  PASS  rebind: card + audio back"
 		else
 			FAIL=$((FAIL + 1)); FAILED="$FAILED rebind"
