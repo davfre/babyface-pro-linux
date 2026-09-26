@@ -1700,12 +1700,6 @@ static void babyface_disconnect(struct usb_interface *intf)
 	if (chip->shutdown)
 		return;
 
-	/* Keep the mixer state for the next probe: a userspace usbfs
-	 * claim (PipeWire sink grab, TuxMix daemon) detaches us and the
-	 * cold init of the re-probe would otherwise wipe the settings.
-	 */
-	bf_state_save(chip);
-
 	chip->shutdown = true;
 	/* Kill the session before cancelling the work: the URB handlers
 	 * queue it, and an unplug is exactly when they see errors.  Taking
@@ -1718,6 +1712,14 @@ static void babyface_disconnect(struct usb_interface *intf)
 	mutex_unlock(&chip->mutex);
 	cancel_work_sync(&chip->stream_work);
 	babyface_panel_stop(chip);
+	/* Keep the mixer state for the next probe: a userspace usbfs claim
+	 * (PipeWire sink grab, TuxMix daemon) detaches us and the cold init
+	 * of the re-probe would otherwise wipe the settings.  Saved after
+	 * the panel poll is stopped: the worker writes master/gain/xpoint
+	 * under chip->mutex and this copy does not take it, so an unplug
+	 * during a wheel turn could otherwise snapshot a torn state.
+	 */
+	bf_state_save(chip);
 	/* Balance the probe()-time usb_disable_autosuspend(): the usb_device
 	 * outlives this interface claim (a usbfs detach re-probes without
 	 * the physical device ever disconnecting), so leaving autosuspend
