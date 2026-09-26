@@ -121,8 +121,9 @@ int main(int argc, char **argv)
 	int dur = atoi(argv[5]);
 	pb_ch = 2;
 	/* alt-1 rates have the 14-word frame (56 B): words 12/13 = the
-	 * playback tap at ch10/11.  alt 2/3 frames are 10/8 words. */
-	tap_ok = (rate <= 88200);
+	 * playback tap at ch10/11.  alt 2/3 frames are 10/8 words, with no
+	 * tap channels, so only the alt-1 rates (<= 48 kHz) carry it. */
+	tap_ok = (rate <= 48000);
 	cap_ch = tap_ok ? 12 : 2;
 	total = (long)rate * dur;
 	char dev[32];
