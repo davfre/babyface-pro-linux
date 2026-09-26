@@ -573,6 +573,7 @@ void bf_state_save(struct snd_usb_babyface *chip)
 	s->width = chip->width;
 	s->fx_send = chip->fx_send;
 	s->dim = chip->dim;
+	memcpy(s->eq, chip->eq, sizeof(s->eq));
 	mutex_unlock(&bf_saved_mutex);
 }
 
@@ -610,6 +611,7 @@ int bf_state_restore(struct snd_usb_babyface *chip)
 		chip->width = s->width;
 		chip->fx_send = s->fx_send;
 		chip->dim = s->dim;
+		memcpy(chip->eq, s->eq, sizeof(chip->eq));
 		ret = 1;
 		break;
 	}
@@ -621,6 +623,12 @@ int bf_state_restore(struct snd_usb_babyface *chip)
 	ret = babyface_restore_state(chip);
 	if (ret == 0)
 		ret = bf_state_apply_flags(chip);
+	if (ret == 0)
+		/* The DSP is not part of the register state the cold init
+		 * clears; re-upload the restored coefficients so a usbfs
+		 * detach/re-probe keeps the EQ too.
+		 */
+		bf_eq_reupload(chip);
 	mutex_unlock(&chip->mutex);
 	return ret ? ret : 1;
 }
@@ -1767,6 +1775,12 @@ static int babyface_resume(struct usb_interface *intf)
 	if (err < 0)
 		goto out;
 	err = babyface_restore_state(chip);
+	if (!err)
+		/* The device lost its DSP across the suspend; the bulk EQ
+		 * uploads are not part of the register state re-applied
+		 * above, so re-send them.
+		 */
+		bf_eq_reupload(chip);
 out:
 	mutex_unlock(&chip->mutex);
 	if (!err)

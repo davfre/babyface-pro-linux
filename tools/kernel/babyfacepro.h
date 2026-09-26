@@ -295,6 +295,24 @@ extern const u8 bf_xpoint_block[6];
 #define BF_GAIN_COARSE_MAX		20
 #define BF_GAIN_FINE_SHIFT		5
 
+/* One analog-input strip of the DSP EQ (babyfacepro-ctl.c).  A named type
+ * rather than one nested in the chip, so it can also be saved with the rest
+ * of the mixer state (struct bf_saved).
+ */
+struct bf_eq_channel {
+	bool on;		/* EQ engaged (else identity blocks) */
+	s32 slope_db;		/* low-cut slope 6/12/18/24 (0 = off) */
+	s32 lc_hz;		/* low-cut freq, 0 = off */
+	u32 lc_raw;		/* cached 0x38 word */
+	u8 slope;		/* cached slope byte (2^n - 1) */
+	s32 band_type[3];	/* 0 off, 1 bell, 2 low shelf, 3 high shelf */
+	s32 band_freq[3];	/* Hz */
+	s32 band_q[3];		/* Q x 100 */
+	s32 band_gain[3];	/* dB x 10 */
+	s32 words[3][4];	/* cached c0..c3 */
+	s32 shared;		/* cached c4 (shared by the slots) */
+};
+
 struct snd_usb_babyface {
 	struct snd_card *card;
 	struct usb_device *dev;
@@ -377,19 +395,7 @@ struct snd_usb_babyface {
 	u16 fx_send;			/* FX send level 0..0x1000 */
 
 	/* DSP EQ (babyfacepro-ctl.c) - 4 analog-input strips, params kept in state */
-	struct bf_eq_channel {
-		bool on;		/* EQ engaged (else identity blocks) */
-		s32 slope_db;		/* low-cut slope 6/12/18/24 (0 = off) */
-		s32 lc_hz;		/* low-cut freq, 0 = off */
-		u32 lc_raw;		/* cached 0x38 word */
-		u8 slope;		/* cached slope byte (2^n - 1) */
-		s32 band_type[3];	/* 0 off, 1 bell, 2 low shelf, 3 high shelf */
-		s32 band_freq[3];	/* Hz */
-		s32 band_q[3];		/* Q x 100 */
-		s32 band_gain[3];	/* dB x 10 */
-		s32 words[3][4];	/* cached c0..c3 */
-		s32 shared;		/* cached c4 (shared by the slots) */
-	} eq[4];
+	struct bf_eq_channel eq[4];
 
 	/* front panel (babyfacepro-ctl.c) - 0x17 readback poll */
 	struct delayed_work panel_work;
@@ -464,6 +470,7 @@ struct bf_saved {
 	int width;
 	u16 fx_send;
 	bool dim;
+	struct bf_eq_channel eq[4];
 };
 
 struct bf_rate {
