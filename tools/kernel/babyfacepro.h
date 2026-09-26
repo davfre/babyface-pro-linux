@@ -99,6 +99,13 @@
  */
 #define BF_URB_ERR_STOP			3
 
+/* Minimum time from the end of one stream session to the next session
+ * trigger.  A session triggered within about 15 ms of the previous one's
+ * URBs stopping comes up with the outputs silent (measured on the
+ * hardware); this leaves a margin.
+ */
+#define BF_SESSION_GAP_MS		50
+
 /* Vendor requests (bmRequestType 0x40, value in wValue, no data phase). */
 #define BF_REQ_KEEPALIVE		0x10	/* settings word / stream trigger */
 #define BF_REQ_STATUS			0x11	/* read 4 B */
@@ -336,6 +343,7 @@ struct snd_usb_babyface {
 	int stream_users;		/* substreams set up (hw_params..hw_free) */
 	bool stream_setup[2];		/* per direction, counted in stream_users */
 	bool streaming;			/* URBs actually in flight */
+	ktime_t stream_stopped;		/* when the last session's URBs stopped */
 	bool shutdown;
 	atomic_t urb_err;		/* consecutive bad URBs (stops the stream) */
 	struct work_struct stream_work;
