@@ -1686,6 +1686,7 @@ static int bf_phantom_put(struct snd_kcontrol *kctl,
 	u16 bit = kctl->private_value;
 	bool on = ucontrol->value.integer.value[0];
 	bool cur = !!(chip->preamp & bit);
+	u16 old = chip->preamp;
 	int ret = 0;
 
 	mutex_lock(&chip->mutex);
@@ -1693,8 +1694,13 @@ static int bf_phantom_put(struct snd_kcontrol *kctl,
 		goto out;
 	chip->preamp = on ? (chip->preamp | bit) : (chip->preamp & ~bit);
 	ret = bf_preamp_state_write(chip);
-	if (ret < 0)
+	if (ret < 0) {
+		/* Do not leave the cache claiming a state the device
+		 * never took.
+		 */
+		chip->preamp = old;
 		goto out;
+	}
 	ret = 1;
 out:
 	mutex_unlock(&chip->mutex);
@@ -2579,6 +2585,7 @@ static void bf_panel_balance_wheel(struct snd_usb_babyface *chip, int delta)
 static void bf_panel_set_phantom(struct snd_usb_babyface *chip)
 {
 	u16 bits = 0;
+	u16 old;
 	int m;
 
 	if (chip->panel_mix || chip->panel_in != 1 ||
@@ -2590,6 +2597,7 @@ static void bf_panel_set_phantom(struct snd_usb_babyface *chip)
 		bits |= BF_PREAMP_48V_MIC2;
 
 	mutex_lock(&chip->mutex);
+	old = chip->preamp;
 	/* One channel selected: toggle it.  Both selected: ALIGN both to
 	 * the same state, so repeated SET presses cycle all-on <-> all-off
 	 * (a mixed phantom state cannot persist with both selected).
@@ -2602,7 +2610,8 @@ static void bf_panel_set_phantom(struct snd_usb_babyface *chip)
 	} else {
 		chip->preamp ^= bits;
 	}
-	bf_preamp_state_write(chip);
+	if (bf_preamp_state_write(chip) < 0)
+		chip->preamp = old;
 	for (m = 0; m < 4; m++)
 		chip->panel_mix_disp[m] = 0;
 	mutex_unlock(&chip->mutex);
