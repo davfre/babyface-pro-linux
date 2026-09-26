@@ -764,6 +764,34 @@ static bool babyface_playback_copy(struct snd_usb_babyface *chip,
 	return crossed;
 }
 
+/* Count a bad URB.  Once BF_URB_ERR_STOP of them are in a row, queue
+ * stream_work to stop the session and return true: the URB must not be
+ * resubmitted.  Some host controllers fail a URB on a broken endpoint
+ * at once, without waiting for the bus, and a handler that resubmits
+ * regardless can then spin in interrupt context until the work runs.
+ */
+static bool babyface_urb_error(struct snd_usb_babyface *chip)
+{
+	if (atomic_inc_return(&chip->urb_err) < BF_URB_ERR_STOP)
+		return false;
+	schedule_work(&chip->stream_work);
+	return true;
+}
+
+/* A good URB ends a run of errors - unless the run has already reached
+ * BF_URB_ERR_STOP.  The URBs that got it there were not resubmitted, so
+ * the count has to stand until stream_work has seen it; clearing it
+ * here would leave the session running on fewer and fewer URBs.
+ */
+static void babyface_urb_ok(struct snd_usb_babyface *chip)
+{
+	int err = atomic_read(&chip->urb_err);
+
+	while (err && err < BF_URB_ERR_STOP &&
+	       !atomic_try_cmpxchg(&chip->urb_err, &err, 0))
+		;
+}
+
 static void babyface_complete_in(struct urb *urb)
 {
 	struct snd_usb_babyface *chip = urb->context;
@@ -775,15 +803,15 @@ static void babyface_complete_in(struct urb *urb)
 
 	if (urb->status < 0) {
 		if (urb->status == -ESHUTDOWN || urb->status == -ENOENT ||
-		    urb->status == -ECONNRESET)
-			return;		/* killed */
+		    urb->status == -ECONNRESET || urb->status == -ENODEV)
+			return;		/* killed, or the device is gone */
 		dev_dbg_ratelimited(&chip->dev->dev, "IN urb status %d\n",
 				    urb->status);
-		if (atomic_inc_return(&chip->urb_err) >= BF_URB_ERR_STOP)
-			schedule_work(&chip->stream_work);
+		if (babyface_urb_error(chip))
+			return;
 		goto resubmit;
 	}
-	atomic_set(&chip->urb_err, 0);
+	babyface_urb_ok(chip);
 
 	/* The session outlives a substream that is closed while the other
 	 * direction still runs: close() waits out this RCU section.
@@ -815,8 +843,7 @@ resubmit:
 	if (ret < 0) {
 		dev_err_ratelimited(&chip->dev->dev,
 				    "IN resubmit failed: %d\n", ret);
-		if (atomic_inc_return(&chip->urb_err) >= BF_URB_ERR_STOP)
-			schedule_work(&chip->stream_work);
+		babyface_urb_error(chip);
 	}
 }
 
@@ -832,15 +859,15 @@ static void babyface_complete_out(struct urb *urb)
 
 	if (urb->status < 0) {
 		if (urb->status == -ESHUTDOWN || urb->status == -ENOENT ||
-		    urb->status == -ECONNRESET)
-			return;		/* killed */
+		    urb->status == -ECONNRESET || urb->status == -ENODEV)
+			return;		/* killed, or the device is gone */
 		dev_dbg_ratelimited(&chip->dev->dev, "OUT urb status %d\n",
 				    urb->status);
-		if (atomic_inc_return(&chip->urb_err) >= BF_URB_ERR_STOP)
-			schedule_work(&chip->stream_work);
+		if (babyface_urb_error(chip))
+			return;
 		goto resubmit;
 	}
-	atomic_set(&chip->urb_err, 0);
+	babyface_urb_ok(chip);
 
 	rcu_read_lock();
 	subs = rcu_dereference(chip->subs[SNDRV_PCM_STREAM_PLAYBACK]);
@@ -874,8 +901,7 @@ resubmit:
 	if (ret < 0) {
 		dev_err_ratelimited(&chip->dev->dev,
 				    "OUT resubmit failed: %d\n", ret);
-		if (atomic_inc_return(&chip->urb_err) >= BF_URB_ERR_STOP)
-			schedule_work(&chip->stream_work);
+		babyface_urb_error(chip);
 	}
 }
 
@@ -999,6 +1025,10 @@ static int babyface_stream_start(struct snd_usb_babyface *chip)
 		chip->urbs_out[i]->transfer_flags |=
 			URB_NO_TRANSFER_DMA_MAP;
 	}
+	/* A count left over from the previous session would stop this one
+	 * as soon as a URB errors, or through a stream_work still queued.
+	 */
+	atomic_set(&chip->urb_err, 0);
 	/* Mark the session live before the first URB goes out, not once the
 	 * state is restored: the URBs complete while the vendor writes below
 	 * are still running, and ->streaming is what says the session is
