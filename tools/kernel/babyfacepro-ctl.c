@@ -316,17 +316,21 @@ static int bf_master_put(struct snd_kcontrol *kctl,
 {
 	struct snd_usb_babyface *chip = snd_kcontrol_chip(kctl);
 	int out = bf_master_out[kctl->private_value];
-	u16 l = ucontrol->value.integer.value[0];
-	u16 r = ucontrol->value.integer.value[1];
-	u16 flag;
+	long nl = ucontrol->value.integer.value[0];
+	long nr = ucontrol->value.integer.value[1];
+	u16 l, r, flag;
 	int ret = 0;
 
 	/* The control is declared 0..0x4000 (+6 dB); reject anything outside
 	 * so the 16-bit companion register and the cache stay in spec (the
 	 * ALSA core only enforces this with CONFIG_SND_CTL_INPUT_VALIDATION).
+	 * Check before narrowing: .value.integer.value[] is a long, so a
+	 * value of 0x10000 or more would wrap to a passing u16.
 	 */
-	if (l > 0x4000 || r > 0x4000)
+	if (nl < 0 || nl > 0x4000 || nr < 0 || nr > 0x4000)
 		return -EINVAL;
+	l = nl;
+	r = nr;
 
 	mutex_lock(&chip->mutex);
 	if (l == chip->master[out][0] && r == chip->master[out][1])
@@ -565,12 +569,18 @@ static int bf_xpoint_put(struct snd_kcontrol *kctl,
 	struct snd_usb_babyface *chip = snd_kcontrol_chip(kctl);
 	int out = kctl->private_value >> 8;
 	int src = kctl->private_value & 0xff;
-	u16 l = ucontrol->value.integer.value[0];
-	u16 r = ucontrol->value.integer.value[1];
+	long nl = ucontrol->value.integer.value[0];
+	long nr = ucontrol->value.integer.value[1];
+	u16 l, r;
 	int ret = 0;
 
-	if (l > BF_FADER_TOP || r > BF_FADER_TOP)
+	/* Check before narrowing: a value of 0x10000 or more would wrap to a
+	 * passing u16 (see the note in bf_master_put()).
+	 */
+	if (nl < 0 || nl > BF_FADER_TOP || nr < 0 || nr > BF_FADER_TOP)
 		return -EINVAL;
+	l = nl;
+	r = nr;
 
 	mutex_lock(&chip->mutex);
 	if (l == chip->xpoint[out][src][0] && r == chip->xpoint[out][src][1])
@@ -1510,11 +1520,16 @@ static int bf_fx_send_put(struct snd_kcontrol *kctl,
 			  struct snd_ctl_elem_value *ucontrol)
 {
 	struct snd_usb_babyface *chip = snd_kcontrol_chip(kctl);
-	u16 v = ucontrol->value.integer.value[0];
+	long nv = ucontrol->value.integer.value[0];
+	u16 v;
 	int ret = 0;
 
-	if (v > 0x1000)
+	/* Check before narrowing (a value >= 0x10000 would wrap to a
+	 * passing u16); see bf_master_put().
+	 */
+	if (nv < 0 || nv > 0x1000)
 		return -EINVAL;
+	v = nv;
 
 	mutex_lock(&chip->mutex);
 	if (v == chip->fx_send)
