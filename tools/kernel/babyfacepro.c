@@ -1416,14 +1416,20 @@ static void babyface_private_free(struct snd_card *card)
 				usb_kill_urb(chip->urbs_in[i]);
 				usb_free_urb(chip->urbs_in[i]);
 			}
-			if (chip->urbs_out[i]) {
+			if (chip->urbs_out && chip->urbs_out[i]) {
 				usb_kill_urb(chip->urbs_out[i]);
 				usb_free_urb(chip->urbs_out[i]);
 			}
-			usb_free_coherent(chip->dev, urbsize, chip->buf_in[i],
-					  chip->dma_in[i]);
-			usb_free_coherent(chip->dev, urbsize, chip->buf_out[i],
-					  chip->dma_out[i]);
+			/* probe() allocates the six arrays separately and can
+			 * fail between them, so each may be NULL here - this runs
+			 * on the probe error path via snd_card_free().
+			 */
+			if (chip->buf_in && chip->dma_in)
+				usb_free_coherent(chip->dev, urbsize,
+						  chip->buf_in[i], chip->dma_in[i]);
+			if (chip->buf_out && chip->dma_out)
+				usb_free_coherent(chip->dev, urbsize,
+						  chip->buf_out[i], chip->dma_out[i]);
 		}
 	}
 	kfree(chip->urbs_in);
