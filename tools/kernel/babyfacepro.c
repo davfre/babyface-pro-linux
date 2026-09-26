@@ -1796,8 +1796,12 @@ static int __init babyface_init(void)
 
 static void __exit babyface_exit(void)
 {
-	bf_state_purge();
+	/* Deregister first: each disconnect() calls bf_state_save(), which
+	 * allocates a node for a device it has not seen before.  Purging
+	 * before that frees the list and then leaks those fresh nodes.
+	 */
 	usb_deregister(&babyface_driver);
+	bf_state_purge();
 }
 
 module_init(babyface_init);
