@@ -716,6 +716,7 @@ static bool babyface_playback_copy(struct snd_usb_babyface *chip,
 	unsigned int words = chip->frame_bytes / 4;
 	unsigned int chans = rt->channels;
 	unsigned int pos, f, i;
+	unsigned int total = frames;	/* the URB buffer's full frame count */
 	unsigned long new_period;
 	bool crossed = false;
 	const u8 *src;
@@ -763,6 +764,12 @@ static bool babyface_playback_copy(struct snd_usb_babyface *chip,
 		if (pos >= buf_frames)
 			pos = 0;
 	}
+	/* A clamped copy wrote only [0, frames); clear the tail, or the device
+	 * plays whatever the previous completion left in the URB buffer.
+	 */
+	if (frames < total)
+		memset(data + frames * chip->frame_bytes, 0,
+		       (total - frames) * chip->frame_bytes);
 	chip->hw_ptr[SNDRV_PCM_STREAM_PLAYBACK] += frames;
 	new_period = chip->hw_ptr[SNDRV_PCM_STREAM_PLAYBACK] / rt->period_size;
 	if (new_period != chip->prev_period[SNDRV_PCM_STREAM_PLAYBACK]) {
