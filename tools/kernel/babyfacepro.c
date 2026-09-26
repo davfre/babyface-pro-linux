@@ -14,6 +14,7 @@
 #include <linux/math64.h>
 #include <linux/module.h>
 #include <linux/mutex.h>
+#include <linux/rcupdate.h>
 #include <linux/unaligned.h>
 #include <linux/usb.h>
 #include <linux/workqueue.h>
@@ -763,6 +764,34 @@ static bool babyface_playback_copy(struct snd_usb_babyface *chip,
 	return crossed;
 }
 
+/* Count a bad URB.  Once BF_URB_ERR_STOP of them are in a row, queue
+ * stream_work to stop the session and return true: the URB must not be
+ * resubmitted.  Some host controllers fail a URB on a broken endpoint
+ * at once, without waiting for the bus, and a handler that resubmits
+ * regardless can then spin in interrupt context until the work runs.
+ */
+static bool babyface_urb_error(struct snd_usb_babyface *chip)
+{
+	if (atomic_inc_return(&chip->urb_err) < BF_URB_ERR_STOP)
+		return false;
+	schedule_work(&chip->stream_work);
+	return true;
+}
+
+/* A good URB ends a run of errors - unless the run has already reached
+ * BF_URB_ERR_STOP.  The URBs that got it there were not resubmitted, so
+ * the count has to stand until stream_work has seen it; clearing it
+ * here would leave the session running on fewer and fewer URBs.
+ */
+static void babyface_urb_ok(struct snd_usb_babyface *chip)
+{
+	int err = atomic_read(&chip->urb_err);
+
+	while (err && err < BF_URB_ERR_STOP &&
+	       !atomic_try_cmpxchg(&chip->urb_err, &err, 0))
+		;
+}
+
 static void babyface_complete_in(struct urb *urb)
 {
 	struct snd_usb_babyface *chip = urb->context;
@@ -774,17 +803,21 @@ static void babyface_complete_in(struct urb *urb)
 
 	if (urb->status < 0) {
 		if (urb->status == -ESHUTDOWN || urb->status == -ENOENT ||
-		    urb->status == -ECONNRESET)
-			return;		/* killed */
+		    urb->status == -ECONNRESET || urb->status == -ENODEV)
+			return;		/* killed, or the device is gone */
 		dev_dbg_ratelimited(&chip->dev->dev, "IN urb status %d\n",
 				    urb->status);
-		if (atomic_inc_return(&chip->urb_err) >= BF_URB_ERR_STOP)
-			schedule_work(&chip->stream_work);
+		if (babyface_urb_error(chip))
+			return;
 		goto resubmit;
 	}
-	atomic_set(&chip->urb_err, 0);
+	babyface_urb_ok(chip);
 
-	subs = READ_ONCE(chip->subs[SNDRV_PCM_STREAM_CAPTURE]);
+	/* The session outlives a substream that is closed while the other
+	 * direction still runs: close() waits out this RCU section.
+	 */
+	rcu_read_lock();
+	subs = rcu_dereference(chip->subs[SNDRV_PCM_STREAM_CAPTURE]);
 	if (subs) {
 		snd_pcm_stream_lock_irqsave(subs, flags);
 		if (snd_pcm_running(subs)) {
@@ -798,13 +831,19 @@ static void babyface_complete_in(struct urb *urb)
 		if (crossed)
 			snd_pcm_period_elapsed(subs);
 	}
+	rcu_read_unlock();
 resubmit:
+	/* The session is being stopped: babyface_stream_kill() clears
+	 * ->streaming before it kills the URBs.  A resubmit now would only
+	 * fail against the kill and be counted as a stream error.
+	 */
+	if (!READ_ONCE(chip->streaming))
+		return;
 	ret = usb_submit_urb(urb, GFP_ATOMIC);
 	if (ret < 0) {
 		dev_err_ratelimited(&chip->dev->dev,
 				    "IN resubmit failed: %d\n", ret);
-		if (atomic_inc_return(&chip->urb_err) >= BF_URB_ERR_STOP)
-			schedule_work(&chip->stream_work);
+		babyface_urb_error(chip);
 	}
 }
 
@@ -815,42 +854,54 @@ static void babyface_complete_out(struct urb *urb)
 	unsigned long flags;
 	unsigned int frames;
 	bool crossed = false;
+	bool fed = false;
 	int ret;
 
 	if (urb->status < 0) {
 		if (urb->status == -ESHUTDOWN || urb->status == -ENOENT ||
-		    urb->status == -ECONNRESET)
-			return;		/* killed */
+		    urb->status == -ECONNRESET || urb->status == -ENODEV)
+			return;		/* killed, or the device is gone */
 		dev_dbg_ratelimited(&chip->dev->dev, "OUT urb status %d\n",
 				    urb->status);
-		if (atomic_inc_return(&chip->urb_err) >= BF_URB_ERR_STOP)
-			schedule_work(&chip->stream_work);
+		if (babyface_urb_error(chip))
+			return;
 		goto resubmit;
 	}
-	atomic_set(&chip->urb_err, 0);
+	babyface_urb_ok(chip);
 
-	subs = READ_ONCE(chip->subs[SNDRV_PCM_STREAM_PLAYBACK]);
+	rcu_read_lock();
+	subs = rcu_dereference(chip->subs[SNDRV_PCM_STREAM_PLAYBACK]);
 	if (subs) {
 		snd_pcm_stream_lock_irqsave(subs, flags);
 		if (snd_pcm_running(subs)) {
 			frames = chip->frames_per_urb;
 			crossed = babyface_playback_copy(chip, subs,
 							 urb->transfer_buffer, frames);
+			fed = true;
 		}
 		snd_pcm_stream_unlock_irqrestore(subs, flags);
 		if (crossed)
 			snd_pcm_period_elapsed(subs);
-	} else {
-		/* No consumer: silence the OUT frames. */
-		memset(urb->transfer_buffer, 0, urb->transfer_buffer_length);
 	}
+	rcu_read_unlock();
+	/* Nothing playing (no substream, or one that is set up but stopped,
+	 * e.g. between an xrun and the restart): send silence, not the
+	 * audio this URB carried last time round.
+	 */
+	if (!fed)
+		memset(urb->transfer_buffer, 0, urb->transfer_buffer_length);
 resubmit:
+	/* The session is being stopped: babyface_stream_kill() clears
+	 * ->streaming before it kills the URBs.  A resubmit now would only
+	 * fail against the kill and be counted as a stream error.
+	 */
+	if (!READ_ONCE(chip->streaming))
+		return;
 	ret = usb_submit_urb(urb, GFP_ATOMIC);
 	if (ret < 0) {
 		dev_err_ratelimited(&chip->dev->dev,
 				    "OUT resubmit failed: %d\n", ret);
-		if (atomic_inc_return(&chip->urb_err) >= BF_URB_ERR_STOP)
-			schedule_work(&chip->stream_work);
+		babyface_urb_error(chip);
 	}
 }
 
@@ -858,208 +909,192 @@ void babyface_stream_kill(struct snd_usb_babyface *chip)
 {
 	int i;
 
+	/* Clear the flag before the kills, not after.  The completion
+	 * handlers test it before resubmitting, so a URB that completes
+	 * while this loop runs retires instead of resubmitting into its
+	 * own kill, which fails with -EPERM and counts towards
+	 * stream_work.
+	 */
+	WRITE_ONCE(chip->streaming, false);
 	for (i = 0; i < chip->nurbs; i++) {
 		usb_kill_urb(chip->urbs_in[i]);
 		usb_kill_urb(chip->urbs_out[i]);
 	}
-	chip->streaming = false;
 }
-
-/* Stream start/stop run in process context (control transfers sleep).
- * The trigger only toggles stream_users and schedules this work.
- */
 
 /* Stop both PCM substreams (if running) so apps blocked in read/write
  * wake with a clean error: XRUN for a recoverable stream error, or
  * DISCONNECTED when the card is going away.
+ *
+ * Call this after babyface_stream_kill(), not before: trigger START tests
+ * ->streaming under the stream lock taken here, so with the flag already
+ * clear a START either fails with -EPIPE or has finished and is stopped
+ * below.  The other way round it can slip in between and leave a substream
+ * running on a session that is gone.
  */
 void babyface_pcm_stop_both(struct snd_usb_babyface *chip, snd_pcm_state_t state)
 {
+	unsigned long flags;
 	int s;
 
+	/* close() waits out this RCU section, as for the URB handlers. */
+	rcu_read_lock();
 	for (s = 0; s < 2; s++) {
-		struct snd_pcm_substream *subs = READ_ONCE(chip->subs[s]);
+		struct snd_pcm_substream *subs = rcu_dereference(chip->subs[s]);
 
-		if (subs && snd_pcm_running(subs))
+		if (!subs)
+			continue;
+		snd_pcm_stream_lock_irqsave(subs, flags);
+		if (snd_pcm_running(subs))
 			snd_pcm_stop(subs, state);
+		snd_pcm_stream_unlock_irqrestore(subs, flags);
 	}
-}
-
-/* Re-count stream_users from the substream running states.  The apps
- * can recover (re-prepare + trigger) while the stream work runs, so a
- * hard `= 0` would wipe a fresh increment and leave a RUNNING
- * substream with no URBs (hang).  Called on the error paths with the
- * mutex held.
- */
-static void bf_recount_users(struct snd_usb_babyface *chip)
-{
-	unsigned long flags;
-	int s, users = 0;
-
-	for (s = 0; s < 2; s++) {
-		struct snd_pcm_substream *subs = READ_ONCE(chip->subs[s]);
-
-		if (subs && snd_pcm_running(subs))
-			users++;
-	}
-	spin_lock_irqsave(&chip->lock, flags);
-	chip->stream_users = users;
-	spin_unlock_irqrestore(&chip->lock, flags);
+	rcu_read_unlock();
 }
 
 /* Stream model (big picture):
  *
- * The PCM stream is entirely asynchronous.  A trigger(START/STOP) does
- * not touch the hardware; it only changes the shared stream_users
- * counter (0..2, one per running substream, counted under chip->lock)
- * and schedules stream_work.  The work runs in process context (the
- * control transfers and usb_submit_urb() calls must sleep):
+ * The device has one USB session, shared by both directions.  Its
+ * lifetime follows the substreams' setup, not their triggers - the
+ * same pattern as the FireWire audio drivers:
  *
- *  - 1st user (users 0 -> 1): cold-init + the session trigger pair,
- *    then the interrupt URBs (nurbs in each direction) are submitted and
- *    the session is armed; the mixer state is re-applied afterwards.
- *  - last user (users 1 -> 0): the URBs are killed and the session
- *    disarmed.
+ *  - hw_params counts a substream as a user of the session;
+ *  - prepare starts the session if it is not running: cold-init + the
+ *    session trigger pair, then the interrupt URBs (nurbs in each
+ *    direction) are submitted, the session is armed and the cached
+ *    mixer state re-applied;
+ *  - trigger START/STOP only decides whether the URB handlers move that
+ *    substream's audio.  The URBs keep running either way, carrying
+ *    silence while nothing plays;
+ *  - hw_free drops the user, and the last one stops the session.
  *
- * So the device has exactly one live stream regardless of how many
- * substreams run, and a playback+capture pair shares it.  An app that
- * triggers while the work is running just increments stream_users; the
- * work's re-count on the error path (bf_recount_users) reflects the
- * RUNNING state so a recovered app re-arms from a clean slate.
+ * A sound server restarts its streams with prepare + START after every
+ * xrun.  That must not repeat the cold-init: it takes long enough that
+ * PipeWire does not ride through it, and an already connected client
+ * stays silent afterwards.
+ */
+
+/* Start the session.  Caller holds chip->mutex. */
+static int babyface_stream_start(struct snd_usb_babyface *chip)
+{
+	unsigned int urbsize = chip->frame_bytes * chip->frames_per_urb;
+	int i, ret;
+
+	/* The firmware only validates a stream session that is
+	 * preceded by the full cold-init (the user-space reference
+	 * sends streaming_init at every session start - without it
+	 * the outputs stay silent).  The 0x16 clear wipes the mixer
+	 * registers, so the cached state is re-applied after the arm.
+	 */
+	ret = bf_cold_init(chip);
+	if (ret < 0)
+		goto err;
+
+	/* Stream trigger pair (cap_audio): 0x10 0x8000 + 0x1D. */
+	ret = bf_vendor_write(chip, BF_REQ_KEEPALIVE, 0x0000, 0x8000);
+	if (ret < 0)
+		goto err;
+	ret = bf_vendor_write(chip, BF_REQ_SESSION_START, 0x0000, 0x0000);
+	if (ret < 0)
+		goto err;
+
+	for (i = 0; i < chip->nurbs; i++) {
+		/* Do not replay data from the previous stream/format. */
+		memset(chip->buf_out[i], 0, urbsize);
+		usb_fill_int_urb(chip->urbs_in[i], chip->dev,
+				 usb_rcvintpipe(chip->dev, BF_EP_IN),
+				 chip->buf_in[i], urbsize,
+				 babyface_complete_in, chip, 1);
+		usb_fill_int_urb(chip->urbs_out[i], chip->dev,
+				 usb_sndintpipe(chip->dev, BF_EP_OUT),
+				 chip->buf_out[i], urbsize,
+				 babyface_complete_out, chip, 1);
+		/* The buffers come from usb_alloc_coherent(), so
+		 * they are already DMA-mapped: hand the HCD the
+		 * mapping instead of letting it map them again.
+		 * Without this, usb_hcd_map_urb_for_dma() calls
+		 * dma_map_single() on a coherent allocation, which
+		 * fails with -EAGAIN on any host where that
+		 * allocation is a vmap (IOMMU-backed dma-iommu,
+		 * e.g. amd_iommu in its default translated mode).
+		 */
+		chip->urbs_in[i]->transfer_dma = chip->dma_in[i];
+		chip->urbs_in[i]->transfer_flags |=
+			URB_NO_TRANSFER_DMA_MAP;
+		chip->urbs_out[i]->transfer_dma = chip->dma_out[i];
+		chip->urbs_out[i]->transfer_flags |=
+			URB_NO_TRANSFER_DMA_MAP;
+	}
+	/* A count left over from the previous session would stop this one
+	 * as soon as a URB errors, or through a stream_work still queued.
+	 */
+	atomic_set(&chip->urb_err, 0);
+	/* Mark the session live before the first URB goes out, not once the
+	 * state is restored: the URBs complete while the vendor writes below
+	 * are still running, and ->streaming is what says the session is
+	 * theirs to keep going.  The error path clears it again.
+	 */
+	WRITE_ONCE(chip->streaming, true);
+	for (i = 0; i < chip->nurbs; i++) {
+		ret = usb_submit_urb(chip->urbs_in[i], GFP_KERNEL);
+		if (ret < 0)
+			goto err;
+		ret = usb_submit_urb(chip->urbs_out[i], GFP_KERNEL);
+		if (ret < 0)
+			goto err;
+	}
+	/* Session arm (cap_audio frame 5829, after the URBs). */
+	ret = bf_vendor_write(chip, BF_REQ_SESSION_ARM, 0x0000, 0xc000);
+	if (ret < 0)
+		goto err;
+
+	/* The cold init above cleared the mixer registers; push the
+	 * cached state back (preamp, gains, masters, crosspoints,
+	 * pitch) so the session starts at the user's levels.
+	 */
+	ret = babyface_restore_state(chip);
+	if (ret < 0)
+		goto err;
+
+	/* The 0x16 clear also wipes the flag registers (loopback,
+	 * AN1>2, stereo link, width, FX send, MS) - re-apply them.
+	 */
+	ret = bf_state_apply_flags(chip);
+	if (ret < 0)
+		goto err;
+
+	dev_dbg(&chip->dev->dev, "stream started (%u frames/URB, %u URBs)\n",
+		chip->frames_per_urb, chip->nurbs);
+	return 0;
+
+err:
+	dev_err_ratelimited(&chip->dev->dev, "failed to start stream: %d\n",
+			    ret);
+	babyface_stream_kill(chip);
+	return ret;
+}
+
+/* Persistent URB errors (bad link, device wedged): stop the session and
+ * wake the apps with -EPIPE.  Their recovery (prepare + START) starts a
+ * new session from a clean slate.  Runs in process context because
+ * killing the URBs sleeps.
  */
 void babyface_stream_work(struct work_struct *work)
 {
 	struct snd_usb_babyface *chip =
 		container_of(work, struct snd_usb_babyface, stream_work);
-	unsigned int urbsize;
-	unsigned long flags;
-	int i, ret;
-	int users;
 
 	mutex_lock(&chip->mutex);
-	urbsize = chip->frame_bytes * chip->frames_per_urb;
-
-	if (chip->shutdown) {
-		mutex_unlock(&chip->mutex);
-		return;
-	}
-
-	/* Persistent URB errors (bad link, device wedged): stop the stream
-	 * and wake the apps with -EPIPE.  stream_users is re-counted from
-	 * the (now stopped) substreams so an app recovery (prepare+start)
-	 * re-arms the session from a clean slate.
-	 */
-	if (atomic_read(&chip->urb_err) >= BF_URB_ERR_STOP) {
+	if (!chip->shutdown &&
+	    atomic_read(&chip->urb_err) >= BF_URB_ERR_STOP) {
 		dev_err(&chip->dev->dev,
 			"stream error: %d consecutive bad URBs, stopping (apps re-arm)\n",
 			BF_URB_ERR_STOP);
-		babyface_pcm_stop_both(chip, SNDRV_PCM_STATE_XRUN);
 		if (chip->streaming)
 			babyface_stream_kill(chip);
-		bf_recount_users(chip);
+		babyface_pcm_stop_both(chip, SNDRV_PCM_STATE_XRUN);
 		atomic_set(&chip->urb_err, 0);
-		mutex_unlock(&chip->mutex);
-		return;
 	}
-
-	spin_lock_irqsave(&chip->lock, flags);
-	users = chip->stream_users;
-	spin_unlock_irqrestore(&chip->lock, flags);
-
-	if (users > 0 && !chip->streaming) {
-		/* The firmware only validates a stream session that is
-		 * preceded by the full cold-init (the user-space reference
-		 * sends streaming_init at every session start - without it
-		 * the outputs stay silent).  The 0x16 clear wipes the mixer
-		 * registers, so the cached state is re-applied after the arm.
-		 */
-		ret = bf_cold_init(chip);
-		if (ret < 0)
-			goto err;
-
-		/* Stream trigger pair (cap_audio): 0x10 0x8000 + 0x1D. */
-		ret = bf_vendor_write(chip, BF_REQ_KEEPALIVE, 0x0000, 0x8000);
-		if (ret < 0)
-			goto err;
-		ret = bf_vendor_write(chip, BF_REQ_SESSION_START, 0x0000, 0x0000);
-		if (ret < 0)
-			goto err;
-
-		for (i = 0; i < chip->nurbs; i++) {
-			/* Do not replay data from the previous stream/format. */
-			memset(chip->buf_out[i], 0, urbsize);
-			usb_fill_int_urb(chip->urbs_in[i], chip->dev,
-					 usb_rcvintpipe(chip->dev, BF_EP_IN),
-					 chip->buf_in[i], urbsize,
-					 babyface_complete_in, chip, 1);
-			usb_fill_int_urb(chip->urbs_out[i], chip->dev,
-					 usb_sndintpipe(chip->dev, BF_EP_OUT),
-					 chip->buf_out[i], urbsize,
-					 babyface_complete_out, chip, 1);
-			/* The buffers come from usb_alloc_coherent(), so
-			 * they are already DMA-mapped: hand the HCD the
-			 * mapping instead of letting it map them again.
-			 * Without this, usb_hcd_map_urb_for_dma() calls
-			 * dma_map_single() on a coherent allocation, which
-			 * fails with -EAGAIN on any host where that
-			 * allocation is a vmap (IOMMU-backed dma-iommu,
-			 * e.g. amd_iommu in its default translated mode).
-			 */
-			chip->urbs_in[i]->transfer_dma = chip->dma_in[i];
-			chip->urbs_in[i]->transfer_flags |=
-				URB_NO_TRANSFER_DMA_MAP;
-			chip->urbs_out[i]->transfer_dma = chip->dma_out[i];
-			chip->urbs_out[i]->transfer_flags |=
-				URB_NO_TRANSFER_DMA_MAP;
-		}
-		for (i = 0; i < chip->nurbs; i++) {
-			ret = usb_submit_urb(chip->urbs_in[i], GFP_KERNEL);
-			if (ret < 0)
-				goto err;
-			ret = usb_submit_urb(chip->urbs_out[i], GFP_KERNEL);
-			if (ret < 0)
-				goto err;
-		}
-		/* Session arm (cap_audio frame 5829, after the URBs). */
-		ret = bf_vendor_write(chip, BF_REQ_SESSION_ARM, 0x0000, 0xc000);
-		if (ret < 0)
-			goto err;
-
-		/* The cold init above cleared the mixer registers; push the
-		 * cached state back (preamp, gains, masters, crosspoints,
-		 * pitch) so the session starts at the user's levels.
-		 */
-		ret = babyface_restore_state(chip);
-		if (ret < 0)
-			goto err;
-
-		/* The 0x16 clear also wipes the flag registers (loopback,
-		 * AN1>2, stereo link, width, FX send, MS) - re-apply them.
-		 */
-		ret = bf_state_apply_flags(chip);
-		if (ret < 0)
-			goto err;
-
-		chip->streaming = true;
-		dev_dbg(&chip->dev->dev, "stream started (%u frames/URB, %u URBs)\n",
-			chip->frames_per_urb, chip->nurbs);
-	} else if (users == 0 && chip->streaming) {
-		babyface_stream_kill(chip);
-		dev_dbg(&chip->dev->dev, "stream stopped\n");
-	}
-
-	mutex_unlock(&chip->mutex);
-	return;
-
-err:
-	dev_err(&chip->dev->dev, "failed to start stream: %d\n", ret);
-	babyface_stream_kill(chip);
-	/* The apps already got a successful trigger - wake them with an
-	 * XRUN so a failed start (device wedged, cold-init error) does not
-	 * leave them hung in read/write with no URBs in flight.
-	 */
-	babyface_pcm_stop_both(chip, SNDRV_PCM_STATE_XRUN);
-	bf_recount_users(chip);
 	mutex_unlock(&chip->mutex);
 }
 
@@ -1079,24 +1114,20 @@ static const struct snd_pcm_hardware babyface_pcm_hw = {
 	.periods_max = 16,
 };
 
-/* Is the OTHER direction actually transferring?  Not "is it open": a client
- * that has the device open but has not started must still be able to pick the
+/* Does the OTHER direction hold the clock?  The session lives from the
+ * first prepare to the last hw_free, so a substream that is set up but not
+ * running - between an xrun and the sound server's restart, say - still
+ * owns the rate it negotiated.  Not "is it open": a client that has the
+ * device open but has not called hw_params must still be able to pick the
  * rate, so that an application opening playback and capture before starting
  * either one can take both to 96 kHz.
+ *
+ * Caller holds chip->mutex, which is what stream_setup[] is updated under.
  */
-static bool bf_other_running(struct snd_usb_babyface *chip,
-			     struct snd_pcm_substream *subs)
+static bool bf_other_holds_clock(struct snd_usb_babyface *chip,
+				 struct snd_pcm_substream *subs)
 {
-	struct snd_pcm_substream *other = READ_ONCE(chip->subs[!subs->stream]);
-	unsigned long flags;
-	bool running;
-
-	if (!other)
-		return false;
-	snd_pcm_stream_lock_irqsave(other, flags);
-	running = snd_pcm_running(other);
-	snd_pcm_stream_unlock_irqrestore(other, flags);
-	return running;
+	return chip->stream_setup[!subs->stream];
 }
 
 static int babyface_pcm_open(struct snd_pcm_substream *subs)
@@ -1144,7 +1175,7 @@ static int babyface_pcm_open(struct snd_pcm_substream *subs)
 	 * doing any conversion - never the driver.
 	 */
 	mutex_lock(&chip->mutex);
-	locked = chip->streaming ? chip->rate : 0;
+	locked = chip->stream_users ? chip->rate : 0;
 	mutex_unlock(&chip->mutex);
 	if (locked) {
 		ret = snd_pcm_hw_constraint_minmax(rt, SNDRV_PCM_HW_PARAM_RATE,
@@ -1154,7 +1185,7 @@ static int babyface_pcm_open(struct snd_pcm_substream *subs)
 	}
 
 	spin_lock_irqsave(&chip->lock, flags);
-	chip->subs[subs->stream] = subs;
+	rcu_assign_pointer(chip->subs[subs->stream], subs);
 	spin_unlock_irqrestore(&chip->lock, flags);
 	return 0;
 }
@@ -1164,13 +1195,15 @@ static int babyface_pcm_close(struct snd_pcm_substream *subs)
 	struct snd_usb_babyface *chip = snd_pcm_substream_chip(subs);
 	unsigned long flags;
 
-	/* Wait for the stream stop work so the URB callbacks (which
-	 * touch subs) are done before the substream can be freed.
-	 */
 	flush_work(&chip->stream_work);
 	spin_lock_irqsave(&chip->lock, flags);
-	chip->subs[subs->stream] = NULL;
+	RCU_INIT_POINTER(chip->subs[subs->stream], NULL);
 	spin_unlock_irqrestore(&chip->lock, flags);
+	/* The session keeps running while the other direction is set up,
+	 * so a URB handler may still hold this substream: wait for it
+	 * before the core frees the runtime.
+	 */
+	synchronize_rcu();
 	return 0;
 }
 
@@ -1200,6 +1233,11 @@ static int babyface_pcm_hw_params(struct snd_pcm_substream *subs,
 	}
 
 	mutex_lock(&chip->mutex);
+	/* disconnect() has let go of the interface: do not re-point it. */
+	if (chip->shutdown) {
+		ret = -ENODEV;
+		goto out;
+	}
 	if (r->rate != chip->rate) {
 		/* The constraint in open() normally means nobody asks for a
 		 * rate other than the running one.  It can still happen, when
@@ -1210,50 +1248,76 @@ static int babyface_pcm_hw_params(struct snd_pcm_substream *subs,
 		 * because a negotiated rate is never revised for a live
 		 * substream.
 		 */
-		if (bf_other_running(chip, subs)) {
+		if (bf_other_holds_clock(chip, subs)) {
 			dev_dbg(&chip->dev->dev,
-				"rate %u Hz refused: %u Hz stream running\n",
+				"rate %u Hz refused: %u Hz stream set up\n",
 				r->rate, chip->rate);
 			ret = -EBUSY;
 			goto out;
 		}
-		/* Nothing is transferring, so the clock is free.  Stop any
-		 * armed URBs, re-point the bandwidth class and let the stream
-		 * work restart the session at the new rate.
+		/* Nothing is transferring, so the clock is free.  Stop the
+		 * session and re-point the bandwidth class; prepare starts a
+		 * new session at the new rate.
 		 */
 		if (chip->streaming)
 			babyface_stream_kill(chip);
 		ret = usb_set_interface(chip->dev, BF_IFACE, r->alt);
-		if (ret < 0) {
-			babyface_pcm_stop_both(chip, SNDRV_PCM_STATE_XRUN);
-			bf_recount_users(chip);
+		if (ret < 0)
 			goto out;
-		}
 		chip->rate = r->rate;
 		chip->alt = r->alt;
 		chip->frame_bytes = r->frame_bytes;
 		/* The DSP EQ coefficients depend on fs: re-upload. */
 		bf_eq_reupload(chip);
-		/* Publish the new geometry before restarting either stream. */
-		schedule_work(&chip->stream_work);
 		dev_dbg(&chip->dev->dev, "rate %u Hz (alt %u)\n",
 			chip->rate, chip->alt);
+	}
+	/* hw_params can repeat without an hw_free in between: count the
+	 * substream once.
+	 */
+	if (!chip->stream_setup[subs->stream]) {
+		chip->stream_setup[subs->stream] = true;
+		chip->stream_users++;
 	}
 out:
 	mutex_unlock(&chip->mutex);
 	return ret;
 }
 
+/* The last substream to be released stops the session. */
 static int babyface_pcm_hw_free(struct snd_pcm_substream *subs)
 {
-	/* The device buffer is host-side; nothing to release here. */
+	struct snd_usb_babyface *chip = snd_pcm_substream_chip(subs);
+
+	mutex_lock(&chip->mutex);
+	if (chip->stream_setup[subs->stream]) {
+		chip->stream_setup[subs->stream] = false;
+		if (--chip->stream_users == 0 && chip->streaming) {
+			babyface_stream_kill(chip);
+			dev_dbg(&chip->dev->dev, "stream stopped\n");
+		}
+	}
+	mutex_unlock(&chip->mutex);
 	return 0;
 }
 
+/* Start the session unless it already runs - after an xrun the app
+ * prepares again and this is a no-op for the hardware.
+ */
 static int babyface_pcm_prepare(struct snd_pcm_substream *subs)
 {
 	struct snd_usb_babyface *chip = snd_pcm_substream_chip(subs);
 	unsigned long flags;
+	int ret = 0;
+
+	mutex_lock(&chip->mutex);
+	if (chip->shutdown)
+		ret = -ENODEV;
+	else if (!chip->streaming)
+		ret = babyface_stream_start(chip);
+	mutex_unlock(&chip->mutex);
+	if (ret < 0)
+		return ret;
 
 	spin_lock_irqsave(&chip->lock, flags);
 	chip->hw_ptr[subs->stream] = 0;
@@ -1268,24 +1332,19 @@ static int babyface_pcm_trigger(struct snd_pcm_substream *subs, int cmd)
 	unsigned long flags;
 
 	switch (cmd) {
+	/* The session runs from prepare to hw_free; START and STOP only
+	 * decide whether the URB handlers move this substream's audio.
+	 */
 	case SNDRV_PCM_TRIGGER_START:
+		/* A URB error may have stopped the session since prepare. */
+		if (!READ_ONCE(chip->streaming))
+			return -EPIPE;
 		spin_lock_irqsave(&chip->lock, flags);
 		chip->hw_ptr[subs->stream] = 0;
 		chip->prev_period[subs->stream] = 0;
-		/* stream_users is shared by the two substreams (separate
-		 * locks) - serialize the ++/-- so a concurrent trigger on
-		 * the other direction can't lose an increment (which would
-		 * stop the stream while a substream still runs).
-		 */
-		if (chip->stream_users++ == 0)
-			schedule_work(&chip->stream_work);
 		spin_unlock_irqrestore(&chip->lock, flags);
 		return 0;
 	case SNDRV_PCM_TRIGGER_STOP:
-		spin_lock_irqsave(&chip->lock, flags);
-		if (chip->stream_users > 0 && --chip->stream_users == 0)
-			schedule_work(&chip->stream_work);
-		spin_unlock_irqrestore(&chip->lock, flags);
 		return 0;
 	}
 	return -EINVAL;
@@ -1635,6 +1694,15 @@ static void babyface_disconnect(struct usb_interface *intf)
 	bf_state_save(chip);
 
 	chip->shutdown = true;
+	/* Kill the session before cancelling the work: the URB handlers
+	 * queue it, and an unplug is exactly when they see errors.  Taking
+	 * the mutex also waits out a prepare that was already past its
+	 * ->shutdown check.
+	 */
+	mutex_lock(&chip->mutex);
+	if (chip->streaming)
+		babyface_stream_kill(chip);
+	mutex_unlock(&chip->mutex);
 	cancel_work_sync(&chip->stream_work);
 	babyface_panel_stop(chip);
 	/* Balance the probe()-time usb_disable_autosuspend(): the usb_device
@@ -1646,10 +1714,6 @@ static void babyface_disconnect(struct usb_interface *intf)
 	/* Wake apps blocked in read/write: the card is going away. */
 	dev_info(&chip->dev->dev, "disconnect: stopping PCM substreams\n");
 	babyface_pcm_stop_both(chip, SNDRV_PCM_STATE_DISCONNECTED);
-	mutex_lock(&chip->mutex);
-	if (chip->streaming)
-		babyface_stream_kill(chip);
-	mutex_unlock(&chip->mutex);
 
 	snd_card_disconnect(chip->card);
 	/* NEVER snd_card_free() here: it blocks until the last user
@@ -1672,12 +1736,13 @@ static int babyface_suspend(struct usb_interface *intf, pm_message_t message)
 		if (sdev->type == SNDRV_DEV_PCM)
 			snd_pcm_suspend_all(sdev->device_data);
 	}
-	cancel_work_sync(&chip->stream_work);
-	babyface_panel_stop(chip);
+	/* The URB handlers queue the work: kill them first. */
 	mutex_lock(&chip->mutex);
 	if (chip->streaming)
 		babyface_stream_kill(chip);
 	mutex_unlock(&chip->mutex);
+	cancel_work_sync(&chip->stream_work);
+	babyface_panel_stop(chip);
 	return 0;
 }
 
@@ -1692,7 +1757,7 @@ static int babyface_resume(struct usb_interface *intf)
 	/* The device lost its state across the suspend; re-run the cold
 	 * init and re-apply the cached mixer state.  Suspended PCM
 	 * substreams are woken by the core - apps get -ESTRPIPE and
-	 * restart (the trigger re-arms the stream).
+	 * restart (prepare starts a new session).
 	 */
 	mutex_lock(&chip->mutex);
 	err = usb_set_interface(chip->dev, BF_IFACE, chip->alt);

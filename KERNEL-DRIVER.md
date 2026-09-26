@@ -817,6 +817,28 @@ PipeWire UI name).  The validated low-latency DAW profile is
 nurbs=16` (0.33 ms @ 48 kHz) — the ALSA period is floored at
 frames_per_urb, so the module param must match.
 
+## 2026-09-19 — the session follows prepare/hw_free, not the trigger
+
+Bitwig on PipeWire went silent whenever a heavy plugin that produced
+xruns was added or removed, and stayed silent until something
+else touched the device (the front-panel wheel was enough).  Bitwig on
+raw ALSA never did.  With dynamic debug on, each add/remove logged five
+`stream stopped` / `stream started` pairs within a second: every xrun
+recovery (prepare + START) tore the USB session down and ran the full
+cold-init again.  Upstream issue #5 is the same symptom from a buffer
+size change; the reporter found raw ALSA working in the broken state.
+
+The session now lives from the first `prepare` to the last `hw_free`,
+the pattern of the FireWire audio drivers.  `hw_params` counts a
+substream (`stream_setup[]`, `stream_users`), `prepare` starts the
+session if it is down, START/STOP only gate the URB handlers' copy, and
+the OUT handler sends silence whenever no running substream fed it
+(before, a set-up but stopped playback substream replayed the URB's old
+contents).  `stream_work` is left with the persistent-URB-error path.
+Because the URBs now outlive a substream closed while the other
+direction runs, the handlers read `chip->subs[]` under RCU and `close`
+calls `synchronize_rcu()`.
+
 ## Protocol knowledge → kernel equivalents (from the RE)
 
 | Protocol | Kernel equivalent |
