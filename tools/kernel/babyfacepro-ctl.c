@@ -318,7 +318,7 @@ static int bf_master_put(struct snd_kcontrol *kctl,
 	int out = bf_master_out[kctl->private_value];
 	long nl = ucontrol->value.integer.value[0];
 	long nr = ucontrol->value.integer.value[1];
-	u16 l, r, flag;
+	u16 l, r, wire_l, wire_r, flag;
 	int ret = 0;
 
 	/* The control is declared 0..0x4000 (+6 dB); reject anything outside
@@ -336,32 +336,33 @@ static int bf_master_put(struct snd_kcontrol *kctl,
 	if (l == chip->master[out][0] && r == chip->master[out][1])
 		goto out;
 
+	wire_l = chip->muted[out] ? 0 : l;
+	wire_r = chip->muted[out] ? 0 : r;
 	flag = bf_flag_cycle[chip->flag_cnt];
 	chip->flag_cnt = (chip->flag_cnt + 1) & 3;
 
 	/* The 8-bit register is the real volume; the 16-bit is its
 	 * companion (kept in sync like TotalMix).
 	 */
-	ret = bf_vendor_write(chip, BF_REQ_GAIN, bf_master_8bit(l),
+	ret = bf_vendor_write(chip, BF_REQ_GAIN, bf_master_8bit(wire_l),
 			      BF_REG_MASTER_8 + 2 * out);
 	if (ret < 0)
 		goto out;
-	ret = bf_vendor_write(chip, BF_REQ_GAIN, bf_master_8bit(r),
+	ret = bf_vendor_write(chip, BF_REQ_GAIN, bf_master_8bit(wire_r),
 			      BF_REG_MASTER_8 + 2 * out + 1);
 	if (ret < 0)
 		goto out;
-	ret = bf_vendor_write(chip, BF_REQ_CROSSPOINT, l,
+	ret = bf_vendor_write(chip, BF_REQ_CROSSPOINT, wire_l,
 			      (BF_REG_MASTER_16 + 2 * out) | flag);
 	if (ret < 0)
 		goto out;
-	ret = bf_vendor_write(chip, BF_REQ_CROSSPOINT, r,
+	ret = bf_vendor_write(chip, BF_REQ_CROSSPOINT, wire_r,
 			      (BF_REG_MASTER_16 + 2 * out + 1) | flag);
 	if (ret < 0)
 		goto out;
 
 	chip->master[out][0] = l;
 	chip->master[out][1] = r;
-	chip->muted[out] = false;
 	/* A Phones change while DIM is engaged re-bases the restore point. */
 	if (chip->dim && out == 1) {
 		chip->dim_saved[0] = l;
@@ -1397,25 +1398,6 @@ out:
 	return ret;
 }
 
-/* DIM press on the front panel.  The device has no DSP of its own for
- * this, so the host does it, exactly as it already does for the SET
- * button's phantom toggle.
- */
-void bf_panel_toggle_dim(struct snd_usb_babyface *chip)
-{
-	bool on;
-	int ret;
-
-	mutex_lock(&chip->mutex);
-	on = !chip->dim;
-	ret = bf_dim_apply(chip, on);
-	mutex_unlock(&chip->mutex);
-
-	if (ret == 0 && chip->dim_kctl)
-		snd_ctl_notify(chip->card, SNDRV_CTL_EVENT_MASK_VALUE,
-			       &chip->dim_kctl->id);
-}
-
 static int bf_width_info(struct snd_kcontrol *kctl,
 			 struct snd_ctl_elem_info *uinfo)
 {
@@ -1865,6 +1847,25 @@ out:
 	return ret;
 }
 
+static int bf_dim_press_info(struct snd_kcontrol *kctl,
+			     struct snd_ctl_elem_info *uinfo)
+{
+	uinfo->type = SNDRV_CTL_ELEM_TYPE_INTEGER;
+	uinfo->count = 1;
+	uinfo->value.integer.min = 0;
+	uinfo->value.integer.max = 0x7fffffff;
+	return 0;
+}
+
+static int bf_dim_press_get(struct snd_kcontrol *kctl,
+			    struct snd_ctl_elem_value *ucontrol)
+{
+	struct snd_usb_babyface *chip = snd_kcontrol_chip(kctl);
+
+	ucontrol->value.integer.value[0] = READ_ONCE(chip->dim_press_count);
+	return 0;
+}
+
 int babyface_create_controls(struct snd_usb_babyface *chip)
 {
 	static const char * const out_names[6] = {
@@ -1872,6 +1873,19 @@ int babyface_create_controls(struct snd_usb_babyface *chip)
 	};
 	struct snd_kcontrol *kctl;
 	int i, err;
+
+	kctl = snd_ctl_new1(&(struct snd_kcontrol_new){
+		.iface = SNDRV_CTL_ELEM_IFACE_MIXER,
+		.name = "DIM Button Press Count",
+		.access = SNDRV_CTL_ELEM_ACCESS_READ |
+			  SNDRV_CTL_ELEM_ACCESS_VOLATILE,
+		.info = bf_dim_press_info,
+		.get = bf_dim_press_get,
+	}, chip);
+	err = snd_ctl_add(chip->card, kctl);
+	if (err < 0)
+		return err;
+	chip->dim_press_kctl = kctl;
 
 	for (i = 0; i < 6; i++) {
 		kctl = snd_ctl_new1(&(struct snd_kcontrol_new){
@@ -1890,6 +1904,7 @@ int babyface_create_controls(struct snd_usb_babyface *chip)
 		err = snd_ctl_add(chip->card, kctl);
 		if (err < 0)
 			return err;
+		chip->master_kctl[i] = kctl;
 
 		kctl = snd_ctl_new1(&(struct snd_kcontrol_new){
 			.iface = SNDRV_CTL_ELEM_IFACE_MIXER,
@@ -2234,9 +2249,22 @@ static void bf_panel_mix_wheel(struct snd_usb_babyface *chip, int delta)
 	mutex_unlock(&chip->mutex);
 }
 
+/* A muted output ignores the wheel, as it does under TotalMix.  The
+ * firmware still moves the analog level by itself, up from the mute
+ * code, so the output would become faintly audible while the mute switch
+ * still reads off: put the mute back.  Caller holds the mutex.
+ */
+static void bf_panel_remute(struct snd_usb_babyface *chip, int out)
+{
+	bf_vendor_write(chip, BF_REQ_GAIN, BF_MASTER_MUTE,
+			BF_REG_MASTER_8 + 2 * out);
+	bf_vendor_write(chip, BF_REQ_GAIN, BF_MASTER_MUTE,
+			BF_REG_MASTER_8 + 2 * out + 1);
+}
+
 /* Write an output's L/R masters (8-bit companions + 16-bit with the
  * transaction flag) and mirror into the cache - used by the balance
- * wheel.  Caller holds the mutex.
+ * wheel on an unmuted output.  Caller holds the mutex.
  */
 static void bf_panel_write_master(struct snd_usb_babyface *chip, int out,
 				  u16 l, u16 r)
@@ -2255,12 +2283,14 @@ static void bf_panel_write_master(struct snd_usb_babyface *chip, int out,
 			(BF_REG_MASTER_16 + 2 * out + 1) | flag);
 	chip->master[out][0] = l;
 	chip->master[out][1] = r;
-	chip->muted[out] = false;
 	/* A Phones change while DIM is engaged re-bases the restore. */
 	if (chip->dim && out == 1) {
 		chip->dim_saved[0] = l;
 		chip->dim_saved[1] = r;
 	}
+	if (chip->master_kctl[out])
+		snd_ctl_notify(chip->card, SNDRV_CTL_EVENT_MASK_VALUE,
+			       &chip->master_kctl[out]->id);
 }
 
 /* Front-panel OUT wheel, measured on hardware 2026-09-17 with a tone
@@ -2278,9 +2308,9 @@ static void bf_panel_write_master(struct snd_usb_babyface *chip, int out,
  *
  * So while the wheel turns, only the 16-bit is written, and the cache
  * follows the firmware's own count so the ALSA controls read the real
- * level.  A muted output stays muted: only the cache moves.  Both
- * sides move by the louder side's step, so a balance (hold-SELECT) is
- * kept.  Same output mapping as the MIX wheel (Phones = canon 1,
+ * level.  A muted output ignores the wheel (see bf_panel_remute()).
+ * Both sides move by the louder side's step, so a balance (hold-SELECT)
+ * is kept.  Same output mapping as the MIX wheel (Phones = canon 1,
  * Opt = ADAT7/8 = canon 5, else AN1/2).
  */
 static void bf_panel_out_wheel_write(struct snd_usb_babyface *chip, int out,
@@ -2288,14 +2318,12 @@ static void bf_panel_out_wheel_write(struct snd_usb_babyface *chip, int out,
 {
 	u16 flag;
 
-	if (!chip->muted[out]) {
-		flag = bf_flag_cycle[chip->flag_cnt];
-		chip->flag_cnt = (chip->flag_cnt + 1) & 3;
-		bf_vendor_write(chip, BF_REQ_CROSSPOINT, l,
-				(BF_REG_MASTER_16 + 2 * out) | flag);
-		bf_vendor_write(chip, BF_REQ_CROSSPOINT, r,
-				(BF_REG_MASTER_16 + 2 * out + 1) | flag);
-	}
+	flag = bf_flag_cycle[chip->flag_cnt];
+	chip->flag_cnt = (chip->flag_cnt + 1) & 3;
+	bf_vendor_write(chip, BF_REQ_CROSSPOINT, l,
+			(BF_REG_MASTER_16 + 2 * out) | flag);
+	bf_vendor_write(chip, BF_REQ_CROSSPOINT, r,
+			(BF_REG_MASTER_16 + 2 * out + 1) | flag);
 	chip->master[out][0] = l;
 	chip->master[out][1] = r;
 	/* A Phones change while DIM is engaged re-bases the restore. */
@@ -2303,6 +2331,9 @@ static void bf_panel_out_wheel_write(struct snd_usb_babyface *chip, int out,
 		chip->dim_saved[0] = l;
 		chip->dim_saved[1] = r;
 	}
+	if (chip->master_kctl[out])
+		snd_ctl_notify(chip->card, SNDRV_CTL_EVENT_MASK_VALUE,
+			       &chip->master_kctl[out]->id);
 }
 
 /* A click that follows the previous one within this gap moves twice as
@@ -2419,6 +2450,11 @@ static void bf_panel_out_wheel(struct snd_usb_babyface *chip, int delta)
 				ktime_divns(ktime_sub(now, chip->panel_poll_t), 2));
 
 	mutex_lock(&chip->mutex);
+	if (chip->muted[out]) {
+		bf_panel_remute(chip, out);
+		mutex_unlock(&chip->mutex);
+		return;
+	}
 	fast = chip->panel_out_wheel_t &&
 	       dir == chip->panel_out_wheel_dir &&
 	       out == chip->panel_out_wheel_out &&
@@ -2551,6 +2587,11 @@ static void bf_panel_balance_wheel(struct snd_usb_babyface *chip, int delta)
 	u16 fixed, varied;
 
 	mutex_lock(&chip->mutex);
+	if (chip->muted[out]) {
+		bf_panel_remute(chip, out);
+		mutex_unlock(&chip->mutex);
+		return;
+	}
 	/* Read under the lock so the L/R pair is consistent with the
 	 * master/mute/dim writers (they update chip->master[] under the
 	 * same mutex).
@@ -2777,13 +2818,16 @@ static void bf_panel_tick(struct snd_usb_babyface *chip)
 	    chip->panel_prev[3] != BF_PANEL_FLASH_SET)
 		bf_panel_set_phantom(chip);
 
-	/* DIM press: toggle the host-side dim, same host-in-the-loop
-	 * arrangement as SET above.  Decoding the press without acting on
-	 * it made the button look dead with the driver alone.
+	/* DIM is a software-assignable button. Report presses without
+	 * choosing a monitor output or changing any gain in the driver.
 	 */
 	if (st[3] == BF_PANEL_FLASH_DIM &&
-	    chip->panel_prev[3] != BF_PANEL_FLASH_DIM)
-		bf_panel_toggle_dim(chip);
+	    chip->panel_prev[3] != BF_PANEL_FLASH_DIM) {
+		chip->dim_press_count = (chip->dim_press_count + 1) & 0x7fffffff;
+		if (chip->dim_press_kctl)
+			snd_ctl_notify(chip->card, SNDRV_CTL_EVENT_MASK_VALUE,
+				       &chip->dim_press_kctl->id);
+	}
 
 	/* MIX (fader mode) - HOST-latched, like TotalMix (cap_mix.pcap,
 	 * cap_select2.pcap): the raw press readback is `0D 0D 41 44` -

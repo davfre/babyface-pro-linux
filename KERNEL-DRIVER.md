@@ -546,6 +546,15 @@ arithmetic) - which is exactly why that verification mattered.
   right next step is a fresh Windows capture (set Main Out = AN1/2 in
   TotalMix, press DIM, see what changes) - flagged as an open protocol
   question in PROTOCOL.md rather than guessed at in code.
+- **The front-panel DIM button is reported, not acted on** (changed
+  2026-09-17, issue #4). Each press increments the read-only
+  `DIM Button Press Count` control and sends a change event; the driver
+  no longer toggles `Dim Switch` itself. The fixed action dimmed Phones
+  to an absolute -20 dB, which raised quieter levels and missed setups
+  whose speakers are on AN1/2. The RME manual (p. 91) describes DIM as a
+  20 dB reduction from the current level on the selected output, so the
+  action is left to a mixer application such as TuxMix. `Dim Switch`
+  keeps its old behaviour. The notes below describe the earlier wiring.
 - **The front-panel DIM button acts** (wired 2026-09-13, confirmed on
   the physical unit the same day): two presses gave two `Dim Switch`
   and two `Front Panel Dim` events, clean toggle round-trip, no
