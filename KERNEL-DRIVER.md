@@ -851,6 +851,14 @@ Checked with a patch cable from the PH3/4 jack into IN3/IN4, only PH3/4 live and
 
 One thing the cold init did cover: a session triggered less than about 15 ms after the previous one stopped comes up with the outputs silent (and nothing on the FX send), for the whole session.  On a direct port, with back-to-back `pcmxrun` runs and a minimum time from the stop to the trigger: 12 ms left 18-20 of 20 sessions silent, 14 ms 4-9 of 20, and 16 ms or more none, at 32, 44.1 and 48 kHz alike.  Through the hub chain the slower control writes before the trigger hid part of that window.  Sending the Windows session stop `0x13 0xC000` at the stop does not help.  The 1 s cold init always covered this window.  `babyface_stream_start()` now waits until `BF_SESSION_GAP_MS` (50 ms) have passed since the last stop; only a session restarted at once pays it.
 
+## 2026-09-27 — the unit goes standalone when the PC suspends (firmware, not the driver)
+
+Putting the PC into S3 leaves the Babyface Pro showing its standalone state.  Like the rest of RME's units it runs standalone — its own stored routing and clock — whenever no computer is actively driving it, and a suspended host is exactly that.  Nothing the driver sends changes this: the standalone/interface switch is firmware, and there is no "stay in interface mode" request to send to a host that is asleep for the duration.
+
+Whether the unit stays powered (and so shows standalone) or goes dark depends on the USB port: one that keeps its 5 V through S3 leaves the unit on with no host.  On this box the USB link survives the suspend too — dmesg shows `PM: suspend entry (deep)` / `PM: suspend exit` with no `usb 3-1: ... disconnect` and no re-enumeration — so the driver's `suspend()`/`resume()` callbacks run, not the disconnect + re-probe pair, and the host-side state is re-applied on resume (validated 2026-08-25, item 12; the flags/EQ re-apply later folded into `resume()` is not separately re-measured).
+
+The unit's standalone routing and levels come from its own stored configuration, which the driver does not manage, so they need not match the Linux session's — set them from TotalMix (Windows/macOS) if the standalone behaviour matters.
+
 ## Protocol knowledge → kernel equivalents (from the RE)
 
 | Protocol | Kernel equivalent |
