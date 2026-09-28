@@ -350,6 +350,7 @@ struct snd_usb_babyface {
 	unsigned int alt;
 	int stream_users;		/* substreams set up (hw_params..hw_free) */
 	bool stream_setup[2];		/* per direction, counted in stream_users */
+	pid_t owner[2];			/* per direction: tgid that opened it */
 	bool streaming;			/* URBs actually in flight */
 	ktime_t stream_stopped;		/* when the last session's URBs stopped */
 	bool shutdown;

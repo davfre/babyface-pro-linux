@@ -1133,27 +1133,59 @@ static const struct snd_pcm_hardware babyface_pcm_hw = {
 	.periods_max = 16,
 };
 
-/* Does the OTHER direction hold the clock?  The session lives from the
- * first prepare to the last hw_free, so a substream that is set up but not
- * running - between an xrun and the sound server's restart, say - still
- * owns the rate it negotiated.  Not "is it open": a client that has the
- * device open but has not called hw_params must still be able to pick the
- * rate, so that an application opening playback and capture before starting
- * either one can take both to 96 kHz.
+/* Does ANOTHER application hold the clock through the other direction?
+ * The session lives from the first prepare to the last hw_free, so a
+ * substream that is set up but not running - between an xrun and the
+ * sound server's restart, say - still owns the rate it negotiated.  Not
+ * "is it open": a client that has the device open but has not called
+ * hw_params must still be able to pick the rate.
  *
- * Caller holds chip->mutex, which is what stream_setup[] is updated under.
+ * The application that set the other direction up may change the rate
+ * itself, as snd-hdspm allows for the process that holds both
+ * directions: a DAW switches rate from its own settings without closing
+ * the device.  Processes, not threads, since an application may open
+ * playback and capture from different threads.
+ *
+ * Caller holds chip->mutex, which is what stream_setup[] and owner[] are
+ * updated under.
  */
 static bool bf_other_holds_clock(struct snd_usb_babyface *chip,
 				 struct snd_pcm_substream *subs)
 {
-	return chip->stream_setup[!subs->stream];
+	int other = !subs->stream;
+
+	return chip->stream_setup[other] &&
+	       chip->owner[other] != chip->owner[subs->stream];
+}
+
+/* While another application holds the clock, offer its rate alone.  A
+ * rule, not a constraint set in open(): it is evaluated each time the
+ * application asks, so it follows the other direction being set up and
+ * released, and who set it up.
+ */
+static int bf_hw_rule_rate(struct snd_pcm_hw_params *params,
+			   struct snd_pcm_hw_rule *rule)
+{
+	struct snd_pcm_substream *subs = rule->private;
+	struct snd_usb_babyface *chip = snd_pcm_substream_chip(subs);
+	struct snd_interval t = { .integer = 1 };
+	bool held;
+
+	mutex_lock(&chip->mutex);
+	held = bf_other_holds_clock(chip, subs);
+	t.min = chip->rate;
+	t.max = chip->rate;
+	mutex_unlock(&chip->mutex);
+	if (!held)
+		return 0;
+	return snd_interval_refine(hw_param_interval(params,
+				   SNDRV_PCM_HW_PARAM_RATE), &t);
 }
 
 static int babyface_pcm_open(struct snd_pcm_substream *subs)
 {
 	struct snd_usb_babyface *chip = snd_pcm_substream_chip(subs);
 	struct snd_pcm_runtime *rt = subs->runtime;
-	unsigned int locked;
 	unsigned long flags;
 	int ret;
 
@@ -1180,11 +1212,11 @@ static int babyface_pcm_open(struct snd_pcm_substream *subs)
 	if (ret < 0)
 		return ret;
 
-	/* Both directions share one clock, so while audio is flowing the rate
-	 * belongs to whoever started it.  Offer that rate alone: a client
-	 * arriving later then negotiates down to it, and the sound server
-	 * resamples, rather than the device changing rate underneath a running
-	 * stream.  Advertising the constraint here rather than failing in
+	/* Both directions share one clock, so while another application's
+	 * audio is set up the rate belongs to it.  Offer that rate alone: a
+	 * client arriving later then negotiates down to it, and the sound
+	 * server resamples, rather than the device changing rate underneath
+	 * a running stream.  Advertising the rate rather than failing in
 	 * hw_params() is what keeps a PipeWire sink alive - it picks the rate
 	 * on offer instead of asking for one that has to be refused.
 	 *
@@ -1194,14 +1226,13 @@ static int babyface_pcm_open(struct snd_pcm_substream *subs)
 	 * doing any conversion - never the driver.
 	 */
 	mutex_lock(&chip->mutex);
-	locked = chip->stream_users ? chip->rate : 0;
+	chip->owner[subs->stream] = task_tgid_nr(current);
 	mutex_unlock(&chip->mutex);
-	if (locked) {
-		ret = snd_pcm_hw_constraint_minmax(rt, SNDRV_PCM_HW_PARAM_RATE,
-						   locked, locked);
-		if (ret < 0)
-			return ret;
-	}
+	ret = snd_pcm_hw_rule_add(rt, 0, SNDRV_PCM_HW_PARAM_RATE,
+				  bf_hw_rule_rate, subs,
+				  SNDRV_PCM_HW_PARAM_RATE, -1);
+	if (ret < 0)
+		return ret;
 
 	spin_lock_irqsave(&chip->lock, flags);
 	rcu_assign_pointer(chip->subs[subs->stream], subs);
@@ -1215,6 +1246,9 @@ static int babyface_pcm_close(struct snd_pcm_substream *subs)
 	unsigned long flags;
 
 	flush_work(&chip->stream_work);
+	mutex_lock(&chip->mutex);
+	chip->owner[subs->stream] = 0;
+	mutex_unlock(&chip->mutex);
 	spin_lock_irqsave(&chip->lock, flags);
 	RCU_INIT_POINTER(chip->subs[subs->stream], NULL);
 	spin_unlock_irqrestore(&chip->lock, flags);
@@ -1258,14 +1292,13 @@ static int babyface_pcm_hw_params(struct snd_pcm_substream *subs,
 		goto out;
 	}
 	if (r->rate != chip->rate) {
-		/* The constraint in open() normally means nobody asks for a
-		 * rate other than the running one.  It can still happen, when
-		 * this substream was opened before the other one started: the
-		 * constraint is evaluated at open, so it did not apply then.
-		 * Refuse rather than retune - the alternative is a running
-		 * stream silently changing pitch, with no error and no xrun,
-		 * because a negotiated rate is never revised for a live
-		 * substream.
+		/* The rule in open() normally means no other application
+		 * asks for a rate other than the running one.  It can still
+		 * happen when the other direction was set up between this
+		 * one's refine and its hw_params.  Refuse rather than retune
+		 * - the alternative is a running stream silently changing
+		 * pitch, with no error and no xrun, because a negotiated rate
+		 * is never revised for a live substream.
 		 */
 		if (bf_other_holds_clock(chip, subs)) {
 			dev_dbg(&chip->dev->dev,
@@ -1274,12 +1307,17 @@ static int babyface_pcm_hw_params(struct snd_pcm_substream *subs,
 			ret = -EBUSY;
 			goto out;
 		}
-		/* Nothing is transferring, so the clock is free.  Stop the
-		 * session and re-point the bandwidth class; prepare starts a
-		 * new session at the new rate.
+		/* Nothing else holds the clock.  Stop the session and
+		 * re-point the bandwidth class; prepare starts a new session
+		 * at the new rate.  If this application's other direction is
+		 * still running, stop it with an xrun rather than let it
+		 * change pitch; prepare() then refuses it until it is set up
+		 * again at the new rate.
 		 */
-		if (chip->streaming)
+		if (chip->streaming) {
 			babyface_stream_kill(chip);
+			babyface_pcm_stop_both(chip, SNDRV_PCM_STATE_XRUN);
+		}
 		ret = usb_set_interface(chip->dev, BF_IFACE, r->alt);
 		if (ret < 0)
 			goto out;
@@ -1332,6 +1370,11 @@ static int babyface_pcm_prepare(struct snd_pcm_substream *subs)
 	mutex_lock(&chip->mutex);
 	if (chip->shutdown)
 		ret = -ENODEV;
+	else if (subs->runtime->rate != chip->rate)
+		/* The other direction changed the rate since this one was
+		 * set up: it has to be set up again.
+		 */
+		ret = -EINVAL;
 	else if (!chip->streaming)
 		ret = babyface_stream_start(chip);
 	mutex_unlock(&chip->mutex);
