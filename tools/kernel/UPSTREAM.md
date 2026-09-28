@@ -27,8 +27,9 @@ and the driver is standalone, modeled on `snd-usb-caiaq`.
     buttons, wheel, IN/OUT selection, MIX, DIM).
 - Re-probe resilience: full mixer cache restored across unbind/rebind
   and across S3 suspend/resume (the firmware has no mixer readback).
-- Regression suite `tools/kernel/regress.sh`: 40/40 (rate sweep with
-  signal tap, start/stop stress, mixer-restore, mid-stream disconnect).
+- Regression suite `tools/kernel/regress.sh`: 41/41 (rate sweep with
+  signal tap, runtime period/buffer renegotiation, start/stop stress,
+  mixer-restore, mid-stream disconnect).
 
 ## Files (as submitted, all checkpatch-clean)
 

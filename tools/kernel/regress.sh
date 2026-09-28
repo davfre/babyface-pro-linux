@@ -4,9 +4,11 @@
 # Sweeps every sample rate x period (>= the current frames_per_urb floor)
 # in full-duplex with tools/kernel/pcmxrun.c: xruns on both streams must be
 # 0, and (alt-1 rates) the device playback-tap on capture ch10/11 must
-# carry the tone (signal integrity without a mic).  Then a start/stop
-# stress loop (open/arm/kill/close) and, with --mixer-restore, a check
-# that the host-side mixer cache survives an unbind/rebind.
+# carry the tone (signal integrity without a mic).  Then a runtime
+# period/buffer renegotiation inside one PCM session (pcmreneg.c, the
+# issue-#5 shape), a start/stop stress loop (open/arm/kill/close) and,
+# with --mixer-restore, a check that the host-side mixer cache survives
+# an unbind/rebind.
 #
 # The device must be free (no PipeWire node holding hw:<card>,0).  The
 # script destroys the RME PipeWire nodes (recreated by restarting
@@ -137,6 +139,26 @@ for rate in $RATES; do
 		fi
 	done
 done
+
+# --- runtime renegotiation (issue #5) -------------------------------------
+# Change the period/buffer INSIDE one PCM session - the sequence a sound
+# server runs when the user moves the buffer-size slider (hw_params -> run
+# -> hw_free -> hw_params(new) -> run).  Issue #5 was this leaving the
+# stream "started" but silent; the tap must carry the tone after every
+# change.  Periods start at the module's frames_per_urb floor, go up and
+# come back down, so both directions are covered.
+echo "-- runtime renegotiation: period/buffer changes in one PCM session @48k --"
+RBIN="${TMPDIR:-/tmp}/pcmreneg"
+[ -x "$RBIN" ] || gcc -O2 -o "$RBIN" "$DIR/pcmreneg.c" -lasound -lm -lpthread || exit 1
+P0=$FPU
+[ "$P0" -lt 32 ] && P0=32
+RCONF="$P0:$((P0 * 2)) $((P0 * 2)):$((P0 * 4)) $((P0 * 4)):$((P0 * 8)) $((P0 * 2)):$((P0 * 4)) $P0:$((P0 * 2))"
+if "$RBIN" "$CARD" 48000 $RCONF; then
+	PASS=$((PASS + 1)); echo "  PASS  runtime renegotiation"
+else
+	FAIL=$((FAIL + 1)); FAILED="$FAILED renegotiation"
+	echo "  FAIL  runtime renegotiation"
+fi
 
 # --- start/stop stress ----------------------------------------------------
 echo "-- start/stop stress: 30 x (open/arm/start/stop/close) @48k period 256 --"

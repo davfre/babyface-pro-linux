@@ -6,7 +6,7 @@
 
 <code>VID:PID 2a39:3fc0</code> · reverse-engineered from Windows captures · validated on real hardware
 
-**Hardware-validated** **&nbsp;·&nbsp;** **checkpatch / sparse / W=1 clean** **&nbsp;·&nbsp;** **40/40 regression suite** **&nbsp;·&nbsp;** **0.33 ms latency floor**
+**Hardware-validated** **&nbsp;·&nbsp;** **checkpatch / sparse / W=1 clean** **&nbsp;·&nbsp;** **41/41 regression suite** **&nbsp;·&nbsp;** **0.33 ms latency floor**
 
 </div>
 
@@ -55,7 +55,7 @@ Then the mixer is the normal ALSA control set: `amixer -c <n> controls`.
 - **Mixer (ALSA controls)** — 6 output masters + mutes, the full 6×14 crosspoint matrix, 4 preamp gains, phantom power + PAD, pitch/varispeed, loopback, width, FX send, MS processing, input link, AN 1>2, plus clock source, ref level, phase and trim.
 - **Front panel** (the host is "in the loop", like TotalMix) — every button, the wheel and the IN/OUT/MIX selection are decoded and exposed as read-only controls; the driver acts on SET (phantom), the wheel and MIX-mode, including the VU display. DIM presses are reported through `DIM Button Press Count` for a mixer application to act on; the `Dim Switch` control still applies the fixed Phones dim.
 - **PM** — suspend/resume with full mixer-state restore.
-- **Automated checks** — `regress.sh` passes 40/40 on hardware; `selftests.sh` runs laws, build and checkpatch without the card.
+- **Automated checks** — `regress.sh` passes 41/41 on hardware; `selftests.sh` runs laws, build and checkpatch without the card.
 
 > The protocol was decoded from Windows USB captures and verified bit-by-bit on hardware. The full reference, the calibrated laws and the engineering history live in the docs below.
 

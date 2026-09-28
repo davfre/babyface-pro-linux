@@ -94,9 +94,10 @@ sh tools/kernel/selftests.sh   # law selftests + build + checkpatch — no card 
 sh tools/kernel/regress.sh --dur 1 --mixer-restore --disconnect-test   # needs the card
 ```
 
-`regress.sh` runs the rate × period sweep (expect 0 xruns), the
-start/stop stress, the mixer-restore across unbind/rebind, and a
-mid-stream disconnect — 40/40 on the reference unit.
+`regress.sh` runs the rate × period sweep (expect 0 xruns), a runtime
+period/buffer renegotiation inside one PCM session (the issue-#5
+shape), the start/stop stress, the mixer-restore across unbind/rebind,
+and a mid-stream disconnect — 41/41 on the reference unit.
 
 ## 8. Reporting problems
 
