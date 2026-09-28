@@ -419,7 +419,32 @@ first-impulse method.)  Full sweep `tools/kernel/latency-sweep.sh`:
     `frames_per_urb` — the constraint must be re-negotiated), and stops/
     resumes any active stream cleanly (XRUN or suspend, not a full card
     reset).  Deliberately a **post-merge follow-up**, not an RFC
-    blocker — it touches the streaming core right before submission.
+    blocker - it touches the streaming core right before submission.
+16. **Front-panel state concurrency** (hardening - deliberate follow-up).
+    The read-only panel controls are fed by the 0x17 poll work, which
+    decodes into `chip->panel_*`; the ALSA `get` callbacks read those
+    same fields from another context, and `panel_select` has a **second
+    writer** in the SELECT control's `put()`.  The values are word-sized
+    and read only for reporting, so the race is benign (no torn or stale
+    value that changes behaviour) and no `CONFIG_KCSAN` report exists for
+    it - but it is a data race by the C model and would be flagged if one
+    is ever run.  The proportionate fix is a scoped `READ_ONCE` /
+    `WRITE_ONCE` on the shared fields (the worker is the only writer of
+    the rest; `panel_select` is the only one with two writers).  Left as a
+    follow-up rather than sprinkled in now: ~40 mechanical sites for a
+    benign race, and the panel handlers already take `chip->mutex`, so a
+    lock cannot be held across them without an ABBA with `snd_ctl_notify`.
+17. **Idle cost of the front-panel poll** (measured 2026-09-28).
+    While bound, the 0x17 poll runs at ~47 Hz (`panel_poll_ms`, default
+    20).  On the reference unit the RME's xHCI IRQ line (0000:07:00.4)
+    goes from ~28 IRQ/s with the module unloaded to ~72 IRQ/s bound and
+    idle - **~44 extra interrupts/s** from the driver.  That is
+    negligible for CPU and small for idle power, and
+    `usb_disable_autosuspend()` deliberately keeps the device active so
+    the poll can run.  A lower `panel_poll_ms` (or an adaptive backoff)
+    would trim it, but the OUT wheel decode is timing-sensitive (accel
+    window 62 ms, fast-poll 5 ms for 200 ms after a click), so a backoff
+    needs care - **not worth the risk for the measured gain**.
 
 ## ✅ 2026-09-14 — THE AN1/2 CROSSPOINT BUG: FIXED (the "low map" was not a shadow)
 
