@@ -2197,8 +2197,8 @@ static void bf_panel_mix_wheel(struct snd_usb_babyface *chip, int delta)
 	 * 2 = Phones, 3 = Opt): AN1/2, PH3/4, ADAT7/8 (the optical
 	 * output) respectively.
 	 */
-	int out = chip->panel_out == 3 ? 5 :
-		  chip->panel_out == 2 ? 1 : 0;
+	int out = READ_ONCE(chip->panel_out) == 3 ? 5 :
+		  READ_ONCE(chip->panel_out) == 2 ? 1 : 0;
 	unsigned int blk = bf_xpoint_block[out];
 	u8 targets[2];
 	int n = 0;
@@ -2210,15 +2210,15 @@ static void bf_panel_mix_wheel(struct snd_usb_babyface *chip, int delta)
 	 * steps left/right/both; none = nothing selected = no-op wheel).
 	 * Source indices: AN1/AN2 = 0/1, AN3/AN4 = 2/3, AS1/2 = 4.
 	 */
-	if (chip->panel_in == 3) {
+	if (READ_ONCE(chip->panel_in) == 3) {
 		targets[0] = 4;		/* Opt: the AS1/2 pair */
 		n = 1;
-	} else if (chip->panel_select != 3) {
-		int base = chip->panel_in == 2 ? 2 : 0;
+	} else if (READ_ONCE(chip->panel_select) != 3) {
+		int base = READ_ONCE(chip->panel_in) == 2 ? 2 : 0;
 
-		targets[0] = base + (chip->panel_select == 1 ? 1 : 0);
+		targets[0] = base + (READ_ONCE(chip->panel_select) == 1 ? 1 : 0);
 		n = 1;
-		if (chip->panel_select == 2)
+		if (READ_ONCE(chip->panel_select) == 2)
 			targets[n++] = base + 1;
 	}
 
@@ -2440,8 +2440,8 @@ static void bf_out_wheel_click(int db[2], int step)
 
 static void bf_panel_out_wheel(struct snd_usb_babyface *chip, int delta)
 {
-	int out = chip->panel_out == 3 ? 5 :
-		  chip->panel_out == 2 ? 1 : 0;
+	int out = READ_ONCE(chip->panel_out) == 3 ? 5 :
+		  READ_ONCE(chip->panel_out) == 2 ? 1 : 0;
 	int dir = delta > 0 ? 1 : -1;
 	int clicks = abs(delta);
 	ktime_t now = ktime_get();
@@ -2557,14 +2557,14 @@ static void bf_panel_gain_wheel(struct snd_usb_babyface *chip, int delta)
 	int n = 0;
 	int i;
 
-	if (chip->panel_in == 3 || chip->panel_select == 3)
+	if (READ_ONCE(chip->panel_in) == 3 || READ_ONCE(chip->panel_select) == 3)
 		return;
 	{
-		int base = chip->panel_in == 2 ? 2 : 0;
+		int base = READ_ONCE(chip->panel_in) == 2 ? 2 : 0;
 
-		mics[0] = base + (chip->panel_select == 1 ? 1 : 0);
+		mics[0] = base + (READ_ONCE(chip->panel_select) == 1 ? 1 : 0);
 		n = 1;
-		if (chip->panel_select == 2)
+		if (READ_ONCE(chip->panel_select) == 2)
 			mics[n++] = base + 1;
 	}
 
@@ -2592,8 +2592,8 @@ static void bf_panel_gain_wheel(struct snd_usb_babyface *chip, int delta)
  */
 static void bf_panel_balance_wheel(struct snd_usb_babyface *chip, int delta)
 {
-	int out = chip->panel_out == 3 ? 5 :
-		  chip->panel_out == 2 ? 1 : 0;
+	int out = READ_ONCE(chip->panel_out) == 3 ? 5 :
+		  READ_ONCE(chip->panel_out) == 2 ? 1 : 0;
 	u16 l, r;
 	int bal;		/* -100..+100; + = image right (left varies) */
 	u16 fixed, varied;
@@ -2641,12 +2641,12 @@ static void bf_panel_set_phantom(struct snd_usb_babyface *chip)
 	u16 old;
 	int m;
 
-	if (chip->panel_mix || chip->panel_in != 1 ||
-	    chip->panel_select == 3)
+	if (READ_ONCE(chip->panel_mix) || READ_ONCE(chip->panel_in) != 1 ||
+	    READ_ONCE(chip->panel_select) == 3)
 		return;
-	if (chip->panel_select != 1)
+	if (READ_ONCE(chip->panel_select) != 1)
 		bits |= BF_PREAMP_48V_MIC1;
-	if (chip->panel_select != 0)
+	if (READ_ONCE(chip->panel_select) != 0)
 		bits |= BF_PREAMP_48V_MIC2;
 
 	mutex_lock(&chip->mutex);
@@ -2655,7 +2655,7 @@ static void bf_panel_set_phantom(struct snd_usb_babyface *chip)
 	 * the same state, so repeated SET presses cycle all-on <-> all-off
 	 * (a mixed phantom state cannot persist with both selected).
 	 */
-	if (chip->panel_select == 2) {
+	if (READ_ONCE(chip->panel_select) == 2) {
 		if ((chip->preamp & bits) == bits)
 			chip->preamp &= ~bits;
 		else
@@ -2678,13 +2678,12 @@ static void bf_panel_notify(struct snd_usb_babyface *chip, int ctl)
 }
 
 /* One 0x17 read + decode.  Called from the poll work.  The decoded state
- * (panel_button/wheel/in/out/select/mix/dim) is shared with the control
- * get callbacks: those run under the ALSA controls lock, and the worker is
- * the only writer except panel_select, which the SELECT control's put()
- * also writes.  The values are word-sized and read only for reporting, so
- * the plain concurrent access is benign; a scoped READ_ONCE/WRITE_ONCE (or
- * a dedicated lock for panel_select) would be the way to make it KCSAN-
- * clean - a deliberate follow-up, not an oversight.
+ * (panel_button/wheel/in/out/select/mix/dim) is also read by the control
+ * get callbacks, and panel_select is written by the SELECT control's
+ * put(): those fields are shared between the worker and the ALSA control
+ * layer, so every access to them goes through READ_ONCE()/WRITE_ONCE(),
+ * which keeps the lock-free access defined and tear-free rather than a
+ * plain data race (the worker is the only writer of the other fields).
  */
 static void bf_panel_tick(struct snd_usb_babyface *chip)
 {
@@ -2704,13 +2703,13 @@ static void bf_panel_tick(struct snd_usb_babyface *chip)
 		/* Seed the state controls from the first snapshot. */
 		in = bf_panel_in_decode((st[2] >> BF_PANEL_IN_SHIFT) & 0x7);
 		if (in)
-			chip->panel_in = in;
+			WRITE_ONCE(chip->panel_in, in);
 		out = bf_panel_out_decode(st[1] & 0x07);
 		if (out)
-			chip->panel_out = out;
-		chip->panel_mix = !!(st[0] & 0x80);
-		chip->panel_saw_fader = (st[2] >> 4) == 0x0;
-		chip->panel_dim = !!(st[1] & 0x20);
+			WRITE_ONCE(chip->panel_out, out);
+		WRITE_ONCE(chip->panel_mix, !!(st[0] & 0x80));
+		WRITE_ONCE(chip->panel_saw_fader, (st[2] >> 4) == 0x0);
+		WRITE_ONCE(chip->panel_dim, !!(st[1] & 0x20));
 		return;
 	}
 
@@ -2721,7 +2720,7 @@ static void bf_panel_tick(struct snd_usb_babyface *chip)
 	 * ~3 s so the boot always starts in sync.
 	 */
 	if (time_is_after_jiffies(chip->panel_start + 3 * HZ))
-		chip->panel_select = 3;
+		WRITE_ONCE(chip->panel_select, 3);
 
 	/* Button flash (byte3 over the 0x40 idle base).  Notify on the
 	 * edge, as the other flash-driven controls do, so a subscriber sees
@@ -2729,7 +2728,7 @@ static void bf_panel_tick(struct snd_usb_babyface *chip)
 	 */
 	btn = bf_panel_button_decode(st[3]);
 	if (btn && chip->panel_prev[3] != st[3]) {
-		chip->panel_button = btn;
+		WRITE_ONCE(chip->panel_button, btn);
 		bf_panel_notify(chip, BF_PANEL_KCTL_BUTTON);
 	}
 
@@ -2751,8 +2750,8 @@ static void bf_panel_tick(struct snd_usb_babyface *chip)
 	else if (delta < -8)
 		delta += 16;
 	if (delta && cls == pcls) {
-		chip->panel_wheel = clamp(chip->panel_wheel + delta,
-					  SHRT_MIN, SHRT_MAX);
+		WRITE_ONCE(chip->panel_wheel, clamp(READ_ONCE(chip->panel_wheel) + delta,
+					  SHRT_MIN, SHRT_MAX));
 		bf_panel_notify(chip, BF_PANEL_KCTL_WHEEL);
 		/* Wheel by mode (LINUX-VALIDATION sec. 12, the TotalMix
 		 * emulator): MIX -> monitoring level, OUT (0x8x/0x9x) -> the
@@ -2760,7 +2759,7 @@ static void bf_panel_tick(struct snd_usb_babyface *chip)
 		 * held), IN (0x4x/0x5x/0x6x) -> the SELECT-chosen preamp
 		 * gain.
 		 */
-		if (chip->panel_mix)
+		if (READ_ONCE(chip->panel_mix))
 			bf_panel_mix_wheel(chip, delta);
 		else if (chip->panel_sel_hold >= 10 && cls == 1)
 			bf_panel_balance_wheel(chip, delta);
@@ -2775,16 +2774,16 @@ static void bf_panel_tick(struct snd_usb_babyface *chip)
 	 * (the fader-mode readback drops the IN position bits).
 	 */
 	in = bf_panel_in_decode((st[2] >> BF_PANEL_IN_SHIFT) & 0x7);
-	if (in && in != chip->panel_in) {
-		chip->panel_in = in;
+	if (in && in != READ_ONCE(chip->panel_in)) {
+		WRITE_ONCE(chip->panel_in, in);
 		/* The card CLEARS its L/R/both selection on an IN pair
 		 * switch (user-verified 2026-08-27): re-sync the host-
 		 * tracked SELECT so SET / the wheel / MIX target nothing
 		 * until the user picks a channel again.  This is the main
 		 * anti-desync hook (the physical state is not readable).
 		 */
-		if (chip->panel_select != 3) {
-			chip->panel_select = 3;
+		if (READ_ONCE(chip->panel_select) != 3) {
+			WRITE_ONCE(chip->panel_select, 3);
 			bf_panel_notify(chip, BF_PANEL_KCTL_SELECT);
 		}
 		/* An IN-pair switch disarms the device's SELECT cycle: the
@@ -2795,8 +2794,8 @@ static void bf_panel_tick(struct snd_usb_babyface *chip)
 		bf_panel_notify(chip, BF_PANEL_KCTL_IN);
 	}
 	out = bf_panel_out_decode(st[1] & 0x07);
-	if (out && out != chip->panel_out) {
-		chip->panel_out = out;
+	if (out && out != READ_ONCE(chip->panel_out)) {
+		WRITE_ONCE(chip->panel_out, out);
 		bf_panel_notify(chip, BF_PANEL_KCTL_OUT);
 	}
 
@@ -2813,7 +2812,7 @@ static void bf_panel_tick(struct snd_usb_babyface *chip)
 			 */
 			chip->panel_select_armed = true;
 		} else {
-			chip->panel_select = (chip->panel_select + 1) & 3;
+			WRITE_ONCE(chip->panel_select, (READ_ONCE(chip->panel_select) + 1) & 3);
 		}
 		bf_panel_notify(chip, BF_PANEL_KCTL_SELECT);
 	}
@@ -2864,28 +2863,28 @@ static void bf_panel_tick(struct snd_usb_babyface *chip)
 	fader_now = (st[2] >> 4) == 0x0;
 
 	if (mix_flash) {
-		if (chip->panel_mix) {
+		if (READ_ONCE(chip->panel_mix)) {
 			bf_vendor_write(chip, BF_REQ_PREAMP, 0x0400, 0x8000);
 			bf_vendor_write(chip, BF_REQ_PREAMP, 0x0400, 0x8080);
-			chip->panel_mix = false;
-			chip->panel_saw_fader = false;
+			WRITE_ONCE(chip->panel_mix, false);
+			WRITE_ONCE(chip->panel_saw_fader, false);
 		} else {
 			int ref, out;
 			int m;
 
 			bf_vendor_write(chip, BF_REQ_PREAMP, 0x8480, 0x8c80);
-			chip->panel_mix = true;
+			WRITE_ONCE(chip->panel_mix, true);
 			/* Seed the monitoring level at the reference
 			 * crosspoint's current value so the first wheel
 			 * click doesn't jump from -inf (the reference =
 			 * the first SELECT-chosen channel of the IN pair;
 			 * Opt = the AS1/2 pair).
 			 */
-			out = chip->panel_out == 3 ? 5 :
-			      chip->panel_out == 2 ? 1 : 0;
-			ref = chip->panel_in == 3 ? 4 :
-			      (chip->panel_in == 2 ? 2 : 0) +
-			      (chip->panel_select == 1 ? 1 : 0);
+			out = READ_ONCE(chip->panel_out) == 3 ? 5 :
+			      READ_ONCE(chip->panel_out) == 2 ? 1 : 0;
+			ref = READ_ONCE(chip->panel_in) == 3 ? 4 :
+			      (READ_ONCE(chip->panel_in) == 2 ? 2 : 0) +
+			      (READ_ONCE(chip->panel_select) == 1 ? 1 : 0);
 			chip->panel_mix_raw = chip->xpoint[out][ref][0];
 			/* Seed the VU display shadow at the CURRENT level
 			 * (cap_panel.pcap: TotalMix writes the display value of
@@ -2907,20 +2906,20 @@ static void bf_panel_tick(struct snd_usb_babyface *chip)
 		bf_panel_notify(chip, BF_PANEL_KCTL_MIX);
 	}
 	if (fader_now) {
-		chip->panel_saw_fader = true;
-	} else if (chip->panel_mix && chip->panel_saw_fader &&
+		WRITE_ONCE(chip->panel_saw_fader, true);
+	} else if (READ_ONCE(chip->panel_mix) && READ_ONCE(chip->panel_saw_fader) &&
 		   st[3] != BF_PANEL_FLASH_MIX) {
 		/* device left fader mode by itself (IN/OUT/SET press) */
 		bf_vendor_write(chip, BF_REQ_PREAMP, 0x0400, 0x8000);
 		bf_vendor_write(chip, BF_REQ_PREAMP, 0x0400, 0x8080);
-		chip->panel_mix = false;
-		chip->panel_saw_fader = false;
+		WRITE_ONCE(chip->panel_mix, false);
+		WRITE_ONCE(chip->panel_saw_fader, false);
 		bf_panel_notify(chip, BF_PANEL_KCTL_MIX);
 	}
 
 	dim = !!(st[1] & 0x20);
-	if (dim != chip->panel_dim) {
-		chip->panel_dim = dim;
+	if (dim != READ_ONCE(chip->panel_dim)) {
+		WRITE_ONCE(chip->panel_dim, dim);
 		bf_panel_notify(chip, BF_PANEL_KCTL_DIM);
 	}
 
@@ -2952,7 +2951,7 @@ void babyface_panel_start(struct snd_usb_babyface *chip)
 	 * (host at AN1 while the LEDs show nothing -> first SELECT makes
 	 * the device blink AN1 but the host believes AN2).
 	 */
-	chip->panel_select = 3;	/* none */
+	WRITE_ONCE(chip->panel_select, 3);	/* none */
 	chip->panel_select_armed = true;
 	chip->panel_start = jiffies;
 	chip->panel_fast_until = jiffies;
@@ -2992,7 +2991,7 @@ static int bf_panel_button_get(struct snd_kcontrol *kctl,
 {
 	struct snd_usb_babyface *chip = snd_kcontrol_chip(kctl);
 
-	ucontrol->value.integer.value[0] = chip->panel_button;
+	ucontrol->value.integer.value[0] = READ_ONCE(chip->panel_button);
 	return 0;
 }
 
@@ -3012,7 +3011,7 @@ static int bf_panel_wheel_get(struct snd_kcontrol *kctl,
 {
 	struct snd_usb_babyface *chip = snd_kcontrol_chip(kctl);
 
-	ucontrol->value.integer.value[0] = chip->panel_wheel;
+	ucontrol->value.integer.value[0] = READ_ONCE(chip->panel_wheel);
 	return 0;
 }
 
@@ -3027,7 +3026,7 @@ static int bf_panel_in_get(struct snd_kcontrol *kctl,
 {
 	struct snd_usb_babyface *chip = snd_kcontrol_chip(kctl);
 
-	ucontrol->value.enumerated.item[0] = chip->panel_in;
+	ucontrol->value.enumerated.item[0] = READ_ONCE(chip->panel_in);
 	return 0;
 }
 
@@ -3042,7 +3041,7 @@ static int bf_panel_out_get(struct snd_kcontrol *kctl,
 {
 	struct snd_usb_babyface *chip = snd_kcontrol_chip(kctl);
 
-	ucontrol->value.enumerated.item[0] = chip->panel_out;
+	ucontrol->value.enumerated.item[0] = READ_ONCE(chip->panel_out);
 	return 0;
 }
 
@@ -3057,7 +3056,7 @@ static int bf_panel_select_get(struct snd_kcontrol *kctl,
 {
 	struct snd_usb_babyface *chip = snd_kcontrol_chip(kctl);
 
-	ucontrol->value.enumerated.item[0] = chip->panel_select;
+	ucontrol->value.enumerated.item[0] = READ_ONCE(chip->panel_select);
 	return 0;
 }
 
@@ -3078,8 +3077,8 @@ static int bf_panel_select_put(struct snd_kcontrol *kctl,
 
 	if (v > 3)
 		return -EINVAL;
-	if (v != chip->panel_select) {
-		chip->panel_select = v;
+	if (v != READ_ONCE(chip->panel_select)) {
+		WRITE_ONCE(chip->panel_select, v);
 		bf_panel_notify(chip, BF_PANEL_KCTL_SELECT);
 		ret = 1;
 	}
@@ -3093,7 +3092,7 @@ static int bf_panel_bool_get(struct snd_kcontrol *kctl,
 	struct snd_usb_babyface *chip = snd_kcontrol_chip(kctl);
 
 	ucontrol->value.integer.value[0] =
-		kctl->private_value ? chip->panel_dim : chip->panel_mix;
+		kctl->private_value ? READ_ONCE(chip->panel_dim) : READ_ONCE(chip->panel_mix);
 	return 0;
 }
 

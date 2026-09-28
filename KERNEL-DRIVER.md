@@ -420,20 +420,16 @@ first-impulse method.)  Full sweep `tools/kernel/latency-sweep.sh`:
     resumes any active stream cleanly (XRUN or suspend, not a full card
     reset).  Deliberately a **post-merge follow-up**, not an RFC
     blocker - it touches the streaming core right before submission.
-16. **Front-panel state concurrency** (hardening - deliberate follow-up).
+16. **Front-panel state concurrency** (fixed 2026-09-28).
     The read-only panel controls are fed by the 0x17 poll work, which
     decodes into `chip->panel_*`; the ALSA `get` callbacks read those
-    same fields from another context, and `panel_select` has a **second
-    writer** in the SELECT control's `put()`.  The values are word-sized
-    and read only for reporting, so the race is benign (no torn or stale
-    value that changes behaviour) and no `CONFIG_KCSAN` report exists for
-    it - but it is a data race by the C model and would be flagged if one
-    is ever run.  The proportionate fix is a scoped `READ_ONCE` /
-    `WRITE_ONCE` on the shared fields (the worker is the only writer of
-    the rest; `panel_select` is the only one with two writers).  Left as a
-    follow-up rather than sprinkled in now: ~40 mechanical sites for a
-    benign race, and the panel handlers already take `chip->mutex`, so a
-    lock cannot be held across them without an ABBA with `snd_ctl_notify`.
+    same fields from another context, and `panel_select` also has a
+    second writer in the SELECT control's `put()`.  Every access to the
+    shared fields (`panel_button/wheel/in/out/select/mix/dim`) now goes
+    through `READ_ONCE()` / `WRITE_ONCE()`, so the lock-free sharing is
+    defined and tear-free instead of a plain data race.  The locking is
+    unchanged: a lock cannot be held across the panel handlers, which
+    already take `chip->mutex` (an ABBA with `snd_ctl_notify`).
 17. **Idle cost of the front-panel poll** (measured 2026-09-28).
     While bound, the 0x17 poll runs at ~47 Hz (`panel_poll_ms`, default
     20).  On the reference unit the RME's xHCI IRQ line (0000:07:00.4)
