@@ -2677,9 +2677,14 @@ static void bf_panel_notify(struct snd_usb_babyface *chip, int ctl)
 			       &chip->panel_kctl[ctl]->id);
 }
 
-/* One 0x17 read + decode.  Called from the poll work; no locking needed -
- * the worker is the only writer and the control get callbacks run under
- * the ALSA controls lock (chip->panel_button/wheel are consumed there).
+/* One 0x17 read + decode.  Called from the poll work.  The decoded state
+ * (panel_button/wheel/in/out/select/mix/dim) is shared with the control
+ * get callbacks: those run under the ALSA controls lock, and the worker is
+ * the only writer except panel_select, which the SELECT control's put()
+ * also writes.  The values are word-sized and read only for reporting, so
+ * the plain concurrent access is benign; a scoped READ_ONCE/WRITE_ONCE (or
+ * a dedicated lock for panel_select) would be the way to make it KCSAN-
+ * clean - a deliberate follow-up, not an oversight.
  */
 static void bf_panel_tick(struct snd_usb_babyface *chip)
 {

@@ -6,7 +6,7 @@
 
 <code>VID:PID 2a39:3fc0</code> · reverse-engineered from Windows captures · validated on real hardware
 
-**Hardware-validated** **&nbsp;·&nbsp;** **checkpatch / sparse / W=1 clean** **&nbsp;·&nbsp;** **41/41 regression suite** **&nbsp;·&nbsp;** **0.33 ms latency floor**
+**Hardware-validated** **&nbsp;·&nbsp;** **checkpatch / sparse / W=1 clean** **&nbsp;·&nbsp;** **41/41 regression suite** **&nbsp;·&nbsp;** **0.67 ms clean latency floor (0.33 ms monitoring)**
 
 </div>
 
@@ -16,7 +16,7 @@
 
 A from-scratch kernel driver that brings the **full channel count** and the **hardware DSP mixer** of the Babyface Pro FS to Linux — in its proprietary USB mode, which a stock `snd-usb-audio` cannot touch. Modeled on `snd-usb-caiaq`, the in-tree precedent for interrupt-based USB audio.
 
-The proprietary mode runs the PCM stream on interrupt endpoints (interface 5) and exposes the TotalMix-class control surface as a normal ALSA mixer, reaching a **0.33 ms** streaming floor (16-frame URBs @ 48 kHz) that Windows cannot match.
+The proprietary mode runs the PCM stream on interrupt endpoints (interface 5) and exposes the TotalMix-class control surface as a normal ALSA mixer, reaching a **0.67 ms** clean streaming floor (32-frame URBs @ 48 kHz) and a **0.33 ms** monitoring-grade floor (16-frame URBs @ 48 kHz).
 
 > **Related project:** the companion user-space mixer app lives in the sibling repo **[TuxMix](https://github.com/ismail-bahloul/TuxMix)** (control stack + GUI/TUI).
 
@@ -51,7 +51,7 @@ Then the mixer is the normal ALSA control set: `amixer -c <n> controls`.
 
 **Hardware-validated** on a real Babyface Pro FS, and reported to run unmodified on an original (non-FS) Babyface Pro:
 
-- **Streaming** — 32–192 kHz, 2–12 channels, interrupt-URB, full-duplex; period floor 16 frames (0.33 ms), zero xruns across the sweep.
+- **Streaming** — 32–192 kHz, 2–12 channels, interrupt-URB, full-duplex; 32-frame URBs (0.67 ms @ 48 kHz) run clean across the sweep, 16-frame URBs (0.33 ms, monitoring-grade) are playback-solid but drop the occasional capture buffer.
 - **Mixer (ALSA controls)** — 6 output masters + mutes, the full 6×14 crosspoint matrix, 4 preamp gains, phantom power + PAD, pitch/varispeed, loopback, width, FX send, MS processing, input link, AN 1>2, plus clock source, ref level, phase and trim.
 - **Front panel** (the host is "in the loop", like TotalMix) — every button, the wheel and the IN/OUT/MIX selection are decoded and exposed as read-only controls; the driver acts on SET (phantom), the wheel and MIX-mode, including the VU display. DIM presses are reported through `DIM Button Press Count` for a mixer application to act on; the `Dim Switch` control still applies the fixed Phones dim.
 - **PM** — suspend/resume with full mixer-state restore.
