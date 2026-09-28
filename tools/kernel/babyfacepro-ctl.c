@@ -139,20 +139,26 @@ u8 bf_master_8bit(u16 vol16)
 
 /* The cold-init register clear zeroes the mixer registers TotalMix
  * re-uploads afterwards.  The kernel driver has no saved scene (no
- * readback for faders), so it applies TotalMix's factory routing -
- * every source to every output at unity - so the card makes sound
- * without any user-space mixer at all.
+ * readback for faders), so on a probe with no saved state it applies a
+ * factory routing so the card makes sound without any user-space mixer:
+ * the six playback channels feed every output at unity, and the
+ * hardware inputs (AN1-4, AS1/2, ADAT) are NOT routed - raising an
+ * input's crosspoint in a mixer is what monitors it.
+ *
+ * The inputs are left out deliberately.  Routing all 14 sources into
+ * every output at unity (the earlier default) summed a live mic or line
+ * input straight into the main out and the headphones the moment the
+ * module loaded, before alsa-restore had a chance to put the user's own
+ * levels back - the feedback/level hazard issue #4 raised, and the "mic
+ * audible in the phones" surprise.  The failure is asymmetric: a
+ * default that is too quiet is turned up in a second, one that is too
+ * loud cannot be taken back.
  *
  * The two analog masters (AN1/2, the main out; PH3/4, the headphone
- * out) come up at -20 dB rather than TotalMix's 0 dB.  Routing all 14
- * sources into an output at unity means they SUM, and this runs on
- * every fresh load, before alsa-restore has had a chance to put the
- * user's own levels back.  On monitors or headphones with no volume
- * control of their own that is a real hazard, and the failure is
- * asymmetric: a default that is too quiet is turned up in a second,
- * one that is too loud cannot be taken back.  -20 dB is still plainly
- * audible, and it is not an invented number - it is the exact
- * 8-bit/16-bit pair the hardware's own DIM button writes.
+ * out) come up at -20 dB rather than TotalMix's 0 dB, for the same
+ * reason - the six playback channels into an output at unity sum, and
+ * -20 dB is plainly audible but safe.  It is not an invented number: it
+ * is the exact 8-bit/16-bit pair the hardware's own DIM button writes.
  *
  * The other four outputs (AS1/2, ADAT3/4, ADAT5/6, ADAT7/8) are all
  * digital, carried over the single optical port - nothing downstream
@@ -168,6 +174,7 @@ int babyface_write_default_mixer(struct snd_usb_babyface *chip)
 {
 	int out, src, ret;
 	u16 flag;
+	u16 level;
 
 	/* Output masters: the two analog outputs at -20 dB, the four
 	 * digital ones at 0 dB (see the comment above).  Unmuted either
@@ -214,8 +221,12 @@ int babyface_write_default_mixer(struct snd_usb_babyface *chip)
 		unsigned int blk = bf_xpoint_block[out];
 
 		for (src = 0; src < 14; src++) {
-			ret = bf_xpoint_write(chip, out, src, BF_FADER_0DB,
-					      BF_FADER_0DB);
+			/* Only the playback channels are routed out of the
+			 * box; a hardware input stays out of every output
+			 * until a mixer raises its crosspoint.
+			 */
+			level = src < BF_SRC_PB1 ? 0 : BF_FADER_0DB;
+			ret = bf_xpoint_write(chip, out, src, level, level);
 			if (ret < 0)
 				return ret;
 		}
@@ -227,8 +238,9 @@ int babyface_write_default_mixer(struct snd_usb_babyface *chip)
 	/* Mirror the defaults into the control cache (14 controls/output). */
 	for (out = 0; out < 6; out++)
 		for (src = 0; src < 14; src++) {
-			chip->xpoint[out][src][0] = BF_FADER_0DB;
-			chip->xpoint[out][src][1] = BF_FADER_0DB;
+			level = src < BF_SRC_PB1 ? 0 : BF_FADER_0DB;
+			chip->xpoint[out][src][0] = level;
+			chip->xpoint[out][src][1] = level;
 		}
 
 	/* Host settings word - composed from tracked state (clock defaults

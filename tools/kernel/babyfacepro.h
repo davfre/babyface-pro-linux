@@ -293,6 +293,14 @@ struct bf_source {
 extern const struct bf_source bf_sources[14];
 extern const u8 bf_xpoint_block[6];
 
+/* The first playback source in bf_sources[]: the four analog inputs, the
+ * optical input and the three ADAT pairs come first, the six playback
+ * channels last.  babyface_write_default_mixer() routes only the
+ * playback out of the box; a hardware input is not monitored into any
+ * output until a mixer raises its crosspoint.
+ */
+#define BF_SRC_PB1			8
+
 /* Preamp gain: 0-65 dB in 1 dB steps, packed coarse/fine (see the
  * gain-scale comment above bf_gain_max_db).
  */

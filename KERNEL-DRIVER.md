@@ -59,7 +59,7 @@ libasound_module_pcm_tuxmix.so  ← PipeWire via spa-alsa (sink/source)
 | Loopback record staging | ✅ NO STAGING NEEDED (2026-08-26): the record is 1:1 with the master on Windows (aligned captures) AND Linux (live, S16 tone: −20 dBFS → −20.0).  The “fixed 2^-5 tap”/×32 were artifacts of mktone.py's broken 4-byte tone (chain ran −48 dB low → record quantizer → coarse square).  ×32 REVERTED; mktone.py → S16 |
 | Front-panel readback (0x17 poll at 50 Hz → read-only button/wheel/IN/OUT/MIX/DIM ALSA controls, babyfacepro-ctl.c) | ✅ hardware-validated 2026-08-26 (all six flash codes + wheel; consume-on-get bug fixed — controls hold the last state) |
 | Multi-channel PCM (2-12 ch, full 14-word frame) | ✅ (12-ch capture + playback verified; marker words skipped) |
-| Default mixer state at probe (TotalMix-style: all sources → all outputs at unity, masters 0 dB) | ✅ |
+| Default mixer state at probe (playback → all outputs at unity; hardware inputs not routed; analog masters -20 dB, digital 0 dB) | ✅ (inputs-off default 2026-09-28, see "Power-on defaults") |
 | DSP EQ (eq.c): 4 strips × 3-band bell/shelf + low cut, 64-byte bulk coeff blocks on ep 0x0A | ✅ HARDWARE-VALIDATED 2026-08-27 on the mic (bell ±6 dB @ 200 Hz, +6 dB @ 3 kHz, low cut 100/300 Hz on/off; `eq_selftest` ~1 LSB vs the captures). Fixed-point Q27 (CORDIC + exp2, no FPU). NOTE: the loopback taps the record bus POST-EQ, so the input EQ is not measurable on the loopback chain (ear-validated instead) |
 | Preamp state sync from 0x17 readback at probe | ✅ |
 | Mixer-state persistence across interface re-probes (usbfs claim → detach → re-probe restores 48V/gains/crosspoints/pitch/flags) | ✅ 2026-08-24 |
@@ -500,10 +500,8 @@ arithmetic) - which is exactly why that verification mattered.
   way a speaker or a pair of headphones can, so there is no hazard to
   mitigate there, only a feed that would otherwise arrive 20 dB quiet
   for no reason a receiving device could infer - those four keep
-  TotalMix's own 0 dB default. The routing default is unchanged (every
-  source into every output at unity), so the card still makes sound
-  with no user-space mixer at all - but on the two analog outputs
-  those 14 sources SUM, and the default is re-applied on every fresh
+  TotalMix's own 0 dB default. On the two analog outputs the six
+  playback channels SUM, and the default is re-applied on every fresh
   module load, before udev's `alsactl restore` can put the user's own
   levels back. The -20 dB value is the exact 8-bit/16-bit pair
   (`0xcb` / `0x0333`) that the hardware's own DIM button writes,
@@ -527,6 +525,17 @@ arithmetic) - which is exactly why that verification mattered.
   before: `--mixer-restore` testing (and any power-on-default check)
   needs a synced state file first, or a stale one looks exactly like a
   driver bug.
+- **The routing default routes the playback only, not the inputs**
+  (changed 2026-09-28). A fresh probe with no saved state used to route
+  all 14 sources into every output at unity, summing a live mic or line
+  input straight into the main out and the headphones the moment the
+  module loaded - the hazard issue #4 raised, and the "mic audible in
+  the phones" surprise. `babyface_write_default_mixer()` now routes the
+  six playback channels (PB1-6, `BF_SRC_PB1`) to every output at unity
+  and leaves the hardware inputs (AN1-4, AS1/2, ADAT) out of every
+  output; raising an input's crosspoint in a mixer is what monitors it.
+  The defaults still land before `alsactl restore`, but a fresh load can
+  no longer blast a live input into the outputs.
 - **DIM's scope is Phones-only, and that is confirmed faithful to the
   hardware, not a driver limitation - with one real open question.**
   PROTOCOL.md's own capture states plainly: "DIM only ever touched the
