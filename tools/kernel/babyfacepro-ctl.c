@@ -3736,6 +3736,21 @@ static int bf_eq_put(struct snd_kcontrol *kctl,
 	return ret;
 }
 
+/* The Q controls declare 5..1000 (Q x 100) and bf_eq_put() rejects
+ * anything below 5, so a zeroed band_q would read back out of range -
+ * alsactl then fails to restore it (EINVAL) - and could reach the
+ * coefficient math.  Seed the neutral Q 1.0 on every strip at probe,
+ * before any saved state is applied so a restore still overrides it.
+ */
+void bf_eq_defaults(struct snd_usb_babyface *chip)
+{
+	int strip, band;
+
+	for (strip = 0; strip < 4; strip++)
+		for (band = 0; band < 3; band++)
+			chip->eq[strip].band_q[band] = 100;
+}
+
 int babyface_create_eq(struct snd_usb_babyface *chip)
 {
 	static const char *const names[4] = { "AN1", "AN2", "AN3", "AN4" };

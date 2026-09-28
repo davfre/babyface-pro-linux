@@ -514,6 +514,7 @@ extern const struct bf_source bf_sources[14];
 void bf_eq_band_words(s32 *w, int type, s32 freq_hz, s32 q100,
 		      s32 gain_x10, s32 fs);
 void bf_eq_reupload(struct snd_usb_babyface *chip);
+void bf_eq_defaults(struct snd_usb_babyface *chip);
 int babyface_create_eq(struct snd_usb_babyface *chip);
 extern const u8 bf_xpoint_block[6];
 extern const struct snd_pcm_hw_constraint_list bf_rates_constraint;

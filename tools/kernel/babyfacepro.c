@@ -1567,6 +1567,8 @@ static int babyface_probe(struct usb_interface *intf,
 	else
 		chip->preamp = st[0];
 
+	bf_eq_defaults(chip);
+
 	/* Restore the mixer state saved at the last disconnect (if any);
 	 * the device keeps its registers across a usbfs detach, but the
 	 * cold init above cleared them, so push the user's settings back.
