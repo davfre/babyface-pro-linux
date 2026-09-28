@@ -15,21 +15,21 @@
  * tools/usbdump/PROTOCOL.md is the authoritative reference.
  *
  * Stream notes (hardware-validated 2026-08):
- *   - frames_per_urb is tunable 8..1024 (multiple of 8) but must be at
- *     least one alt packet wide - the device delivers IN data in
- *     alt-sized packets (448/640/1024 B for alt 1/2/3), smaller URBs
- *     get -EOVERFLOW (babble).  So frames_per_urb >= 8/16/32 for
- *     alt 1/2/3; the driver rejects violating rates in hw_params.
- *   - Validated sweep 256->128->64->32->16 (<= 128 kHz): with nurbs=8 the
- *     period floor is 32 frames (0.67 ms @ 48 kHz) without glitches;
+ *   - The URB size follows the application's period, and enough URBs
+ *     stay in flight to cover two periods (bf_urb_frames(), hw_params):
+ *     between urb_frames_min and frames_per_urb, at most nurbs URBs.
+ *     A URB must be a whole number of alt packets - the device delivers IN
+ *     data in alt-sized packets (448/640/1024 B, 8/16/32 frames for
+ *     alt 1/2/3), and smaller URBs get -EOVERFLOW (babble).
+ *   - Measured with fixed URBs, sweep 256->128->64->32->16
+ *     (<= 128 kHz): with nurbs=8 the period floor is 32 frames
+ *     (0.67 ms @ 48 kHz) without glitches;
  *     nurbs=16 drops it to 16 frames (0.33 ms).  Soaks (5-15 min,
  *     2026-08-25) refine this: period 32 is the zero-glitch floor
  *     (0 xruns both directions); period 16 is rock-solid on playback
  *     but the capture side drops ~1 buffer per 7 s (0.67 ms each -
  *     any scheduler hiccup overruns a 0.33 ms ring) - fine for
- *     monitoring, not for clean recording.  Defaults (256x8) match
- *     the RME TotalMix 256-sample buffer; the low-latency profile is
- *     16x16.
+ *     monitoring, not for clean recording.
  *   - The device only advances the stream while BOTH endpoints have a
  *     pending URB - IN and OUT are always submitted as a pair.
  *   - SET_INTERFACE(5, alt) selects single/double/quad speed and USB
@@ -78,9 +78,9 @@
 #define BF_ALT_2			2	/* x2: 64/88.2/96 kHz, 640-B packets */
 #define BF_ALT_3			3	/* x4: 128/176.4/192 kHz, 1024-B packets */
 
-/* Default stream geometry - conservative, matches the RME TotalMix
- * 256-sample buffer.  Both are tunable via module params; the
- * low-latency profile (validated) is frames_per_urb=16 nurbs=16.
+/* Upper limits of the stream geometry: the largest URB and the most
+ * URBs in flight.  The application's period and buffer choose the
+ * values actually used below these; both are module params.
  */
 #define BF_FRAMES_PER_URB_DEFAULT	256
 #define BF_NURBS_DEFAULT		8
@@ -344,7 +344,11 @@ struct snd_usb_babyface {
 	dma_addr_t *dma_in;
 	dma_addr_t *dma_out;
 	unsigned int nurbs;
-	unsigned int frames_per_urb;
+	unsigned int frames_per_urb;	/* URB buffer size: the largest URB */
+	unsigned int urb_frames_min;	/* smallest URB a period may choose */
+	unsigned int urb_frames;	/* this session's URB size */
+	unsigned int urbs_active;	/* this session's URBs in flight */
+	int session_dir;		/* the direction that chose them */
 	unsigned int frame_bytes;	/* 56/40/32 for alt 1/2/3 */
 	unsigned int rate;
 	unsigned int alt;

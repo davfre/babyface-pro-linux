@@ -898,7 +898,7 @@ static void babyface_complete_out(struct urb *urb)
 	if (subs) {
 		snd_pcm_stream_lock_irqsave(subs, flags);
 		if (snd_pcm_running(subs)) {
-			frames = chip->frames_per_urb;
+			frames = urb->transfer_buffer_length / chip->frame_bytes;
 			crossed = babyface_playback_copy(chip, subs,
 							 urb->transfer_buffer, frames);
 			fed = true;
@@ -1000,7 +1000,7 @@ void babyface_pcm_stop_both(struct snd_usb_babyface *chip, snd_pcm_state_t state
 /* Start the session.  Caller holds chip->mutex. */
 static int babyface_stream_start(struct snd_usb_babyface *chip)
 {
-	unsigned int urbsize = chip->frame_bytes * chip->frames_per_urb;
+	unsigned int urbsize = chip->frame_bytes * chip->urb_frames;
 	s64 since;
 	int i, ret;
 
@@ -1032,7 +1032,7 @@ static int babyface_stream_start(struct snd_usb_babyface *chip)
 	if (ret < 0)
 		goto err;
 
-	for (i = 0; i < chip->nurbs; i++) {
+	for (i = 0; i < chip->urbs_active; i++) {
 		/* Do not replay data from the previous stream/format. */
 		memset(chip->buf_out[i], 0, urbsize);
 		usb_fill_int_urb(chip->urbs_in[i], chip->dev,
@@ -1069,7 +1069,7 @@ static int babyface_stream_start(struct snd_usb_babyface *chip)
 	 * theirs to keep going.  The error path clears it again.
 	 */
 	WRITE_ONCE(chip->streaming, true);
-	for (i = 0; i < chip->nurbs; i++) {
+	for (i = 0; i < chip->urbs_active; i++) {
 		ret = usb_submit_urb(chip->urbs_in[i], GFP_KERNEL);
 		if (ret < 0)
 			goto err;
@@ -1083,7 +1083,7 @@ static int babyface_stream_start(struct snd_usb_babyface *chip)
 		goto err;
 
 	dev_dbg(&chip->dev->dev, "stream started (%u frames/URB, %u URBs)\n",
-		chip->frames_per_urb, chip->nurbs);
+		chip->urb_frames, chip->urbs_active);
 	return 0;
 
 err:
@@ -1132,6 +1132,40 @@ static const struct snd_pcm_hardware babyface_pcm_hw = {
 	.periods_min = 2,
 	.periods_max = 16,
 };
+
+/* The period of the direction that set the session up, in whole URBs:
+ * half the URBs in flight, rounded up.  The other direction's period may
+ * not be shorter.  Caller holds chip->mutex.
+ */
+static unsigned int bf_session_period(struct snd_usb_babyface *chip)
+{
+	return chip->urb_frames * DIV_ROUND_UP(chip->urbs_active, 2);
+}
+
+/* The URB size for a session, chosen from the period the application
+ * asked for, as snd-usb-audio sizes its playback URBs: split the period
+ * into the fewest URBs of at most frames_per_urb, and make each a whole
+ * number of the device's IN packets (8/16/32 frames at alt 1/2/3; a URB
+ * that ends inside a packet gets -EOVERFLOW), but not below
+ * urb_frames_min.  A URB never exceeds the period, so a completion
+ * crosses at most one period boundary.  Returns 0 if the rate's packet
+ * does not fit.
+ */
+static unsigned int bf_urb_frames(struct snd_usb_babyface *chip,
+				  const struct bf_rate *r,
+				  unsigned int period)
+{
+	unsigned int pkt = r->min_fpu;
+	unsigned int hi = rounddown(chip->frames_per_urb, pkt);
+	unsigned int lo = roundup(max(chip->urb_frames_min, pkt), pkt);
+	unsigned int urb;
+
+	if (!hi || lo > hi || period < pkt)
+		return 0;
+	urb = rounddown(period / DIV_ROUND_UP(period, hi), pkt);
+	urb = clamp(urb, lo, hi);
+	return urb <= period ? urb : 0;
+}
 
 /* Does ANOTHER application hold the clock through the other direction?
  * The session lives from the first prepare to the last hw_free, so a
@@ -1182,6 +1216,28 @@ static int bf_hw_rule_rate(struct snd_pcm_hw_params *params,
 				   SNDRV_PCM_HW_PARAM_RATE), &t);
 }
 
+/* While another application holds the session, a period must span its
+ * URBs: at least the session's period, in whole URBs.  A rule for the
+ * same reason as the rate.
+ */
+static int bf_hw_rule_period(struct snd_pcm_hw_params *params,
+			     struct snd_pcm_hw_rule *rule)
+{
+	struct snd_pcm_substream *subs = rule->private;
+	struct snd_usb_babyface *chip = snd_pcm_substream_chip(subs);
+	struct snd_interval t = { .integer = 1, .max = UINT_MAX };
+	bool held;
+
+	mutex_lock(&chip->mutex);
+	held = bf_other_holds_clock(chip, subs);
+	t.min = bf_session_period(chip);
+	mutex_unlock(&chip->mutex);
+	if (!held)
+		return 0;
+	return snd_interval_refine(hw_param_interval(params,
+				   SNDRV_PCM_HW_PARAM_PERIOD_SIZE), &t);
+}
+
 static int babyface_pcm_open(struct snd_pcm_substream *subs)
 {
 	struct snd_usb_babyface *chip = snd_pcm_substream_chip(subs);
@@ -1201,14 +1257,20 @@ static int babyface_pcm_open(struct snd_pcm_substream *subs)
 	ret = snd_pcm_hw_constraint_msbits(rt, 0, 32, 24);
 	if (ret < 0)
 		return ret;
-	/* One URB delivers frames_per_urb frames per interrupt; a period must
-	 * span at least one URB so a completion crosses at most one period
-	 * boundary.  Constrain in frames (not bytes) so the minimum period
-	 * does not balloon at low channel counts: 2 ch @ 48 kHz -> 256
-	 * frames (5.3 ms) instead of 1536 frames from a 12-ch byte clamp.
+	/* A period must span at least one URB, so a completion crosses at
+	 * most one period boundary.  The URB size follows the period down to
+	 * urb_frames_min; while another application holds the session, its
+	 * period (in whole URBs) is the floor.  Constrain in frames (not
+	 * bytes) so the minimum period does not balloon at low channel
+	 * counts.
 	 */
 	ret = snd_pcm_hw_constraint_minmax(rt, SNDRV_PCM_HW_PARAM_PERIOD_SIZE,
-					   chip->frames_per_urb, 1 << 18);
+					   chip->urb_frames_min, 1 << 18);
+	if (ret < 0)
+		return ret;
+	ret = snd_pcm_hw_rule_add(rt, 0, SNDRV_PCM_HW_PARAM_PERIOD_SIZE,
+				  bf_hw_rule_period, subs,
+				  SNDRV_PCM_HW_PARAM_PERIOD_SIZE, -1);
 	if (ret < 0)
 		return ret;
 
@@ -1265,6 +1327,8 @@ static int babyface_pcm_hw_params(struct snd_pcm_substream *subs,
 {
 	struct snd_usb_babyface *chip = snd_pcm_substream_chip(subs);
 	const struct bf_rate *r;
+	unsigned int urb, n;
+	bool new_rate = false;
 	int ret = 0;
 
 	r = bf_rate_lookup(params_rate(params));
@@ -1278,10 +1342,12 @@ static int babyface_pcm_hw_params(struct snd_pcm_substream *subs,
 	 * 176.4/192 kHz with frames_per_urb below 32.  Return a clean
 	 * error instead of a silently dead capture stream.
 	 */
-	if (chip->frames_per_urb < r->min_fpu) {
+	urb = bf_urb_frames(chip, r, params_period_size(params));
+	if (!urb) {
 		dev_err(&chip->dev->dev,
-			"rate %u Hz needs frames_per_urb >= %u (module has %u)\n",
-			r->rate, r->min_fpu, chip->frames_per_urb);
+			"rate %u Hz, period %u: no URB size fits (packet %u frames, URBs %u..%u)\n",
+			r->rate, params_period_size(params), r->min_fpu,
+			chip->urb_frames_min, chip->frames_per_urb);
 		return -EINVAL;
 	}
 
@@ -1322,12 +1388,61 @@ static int babyface_pcm_hw_params(struct snd_pcm_substream *subs,
 		if (ret < 0)
 			goto out;
 		chip->rate = r->rate;
+		new_rate = true;
 		chip->alt = r->alt;
 		chip->frame_bytes = r->frame_bytes;
 		/* The DSP EQ coefficients depend on fs: re-upload. */
 		bf_eq_reupload(chip);
 		dev_dbg(&chip->dev->dev, "rate %u Hz (alt %u)\n",
 			chip->rate, chip->alt);
+	}
+	/* The first direction to be set up chooses the URB size and count
+	 * from its period; the other one then needs a period at least as
+	 * long, in whole URBs.  Another application must fit the session
+	 * (open()'s rule offers no shorter period).  The application that
+	 * holds it chooses again when it sets up the direction that chose,
+	 * as a DAW changing its buffer does, when the other direction no
+	 * longer fits, or when the rate changed (the URBs are whole packets
+	 * of the rate).  A new size needs a new session: stop this one, and
+	 * prepare starts the next.
+	 */
+	if (bf_other_holds_clock(chip, subs)) {
+		if (params_period_size(params) < bf_session_period(chip)) {
+			ret = -EBUSY;
+			goto out;
+		}
+	} else if (new_rate || !chip->stream_setup[!subs->stream] ||
+		   chip->session_dir == subs->stream ||
+		   params_period_size(params) < bf_session_period(chip)) {
+		/* URBs in flight for two periods, in whole URBs, and no more:
+		 * the queue is latency.  Not the whole buffer - the other
+		 * direction may be set up later with a smaller one, and it
+		 * shares this queue.  Every buffer holds at least two periods,
+		 * and the other direction's period is at least this one (in
+		 * whole URBs, see bf_session_period()), so neither direction
+		 * gets more queued than its own buffer.
+		 */
+		n = clamp_t(unsigned int,
+			    2 * (params_period_size(params) / urb),
+			    2, chip->nurbs);
+		if (urb != chip->urb_frames || n != chip->urbs_active) {
+			/* This application's other direction may still
+			 * run: stop it with an xrun, prepare() refuses it
+			 * until it fits the new session.
+			 */
+			if (chip->streaming) {
+				babyface_stream_kill(chip);
+				babyface_pcm_stop_both(chip,
+						       SNDRV_PCM_STATE_XRUN);
+			}
+			chip->urb_frames = urb;
+			chip->urbs_active = n;
+			dev_dbg(&chip->dev->dev,
+				"URBs: %u x %u frames for period %u, buffer %u\n",
+				n, urb, params_period_size(params),
+				params_buffer_size(params));
+		}
+		chip->session_dir = subs->stream;
 	}
 	/* hw_params can repeat without an hw_free in between: count the
 	 * substream once.
@@ -1370,9 +1485,10 @@ static int babyface_pcm_prepare(struct snd_pcm_substream *subs)
 	mutex_lock(&chip->mutex);
 	if (chip->shutdown)
 		ret = -ENODEV;
-	else if (subs->runtime->rate != chip->rate)
-		/* The other direction changed the rate since this one was
-		 * set up: it has to be set up again.
+	else if (subs->runtime->rate != chip->rate ||
+		 subs->runtime->period_size < bf_session_period(chip))
+		/* The other direction changed the rate or the URBs since
+		 * this one was set up: it has to be set up again.
 		 */
 		ret = -EINVAL;
 	else if (!chip->streaming)
@@ -1438,6 +1554,7 @@ static const struct snd_pcm_ops babyface_pcm_ops = {
 static int index[SNDRV_CARDS] = SNDRV_DEFAULT_IDX;
 static char *id[SNDRV_CARDS] = SNDRV_DEFAULT_STR;
 static int frames_per_urb = BF_FRAMES_PER_URB_DEFAULT;
+static int urb_frames_min = 32;
 static int nurbs = BF_NURBS_DEFAULT;
 static int panel_poll_ms = BF_PANEL_POLL_MS_DEFAULT;
 
@@ -1446,9 +1563,11 @@ MODULE_PARM_DESC(index, "Index value for the Babyface Pro sound card.");
 module_param_array(id, charp, NULL, 0444);
 MODULE_PARM_DESC(id, "ID string for the Babyface Pro sound card.");
 module_param(frames_per_urb, int, 0444);
-MODULE_PARM_DESC(frames_per_urb, "Audio frames per URB, 8..1024 (16 = low-latency floor, 256 = default).");
+MODULE_PARM_DESC(frames_per_urb, "Largest URB in audio frames, 8..1024 (256 = default); the period chooses the size below it.");
+module_param(urb_frames_min, int, 0444);
+MODULE_PARM_DESC(urb_frames_min, "Smallest URB in audio frames, 8..1024 (32 = default, 16 = low-latency floor).");
 module_param(nurbs, int, 0444);
-MODULE_PARM_DESC(nurbs, "URBs in flight per direction, 1..16 (16 = low-latency).");
+MODULE_PARM_DESC(nurbs, "Most URBs in flight per direction, 2..16 (8 = default).");
 module_param(panel_poll_ms, int, 0444);
 MODULE_PARM_DESC(panel_poll_ms, "Front-panel poll interval in ms, 10..1000 (20 = default, matches Windows' ~50 Hz).");
 
@@ -1538,8 +1657,13 @@ static int babyface_probe(struct usb_interface *intf,
 	 */
 	usb_disable_autosuspend(chip->dev);
 	chip->iface = intf;
-	chip->nurbs = clamp(nurbs, 1, 16);
+	chip->nurbs = clamp(nurbs, 2, 16);
 	chip->frames_per_urb = clamp(frames_per_urb, 8, 1024) & ~7;
+	chip->urb_frames_min = min_t(unsigned int,
+				     clamp(urb_frames_min, 8, 1024) & ~7,
+				     chip->frames_per_urb);
+	chip->urb_frames = chip->frames_per_urb;
+	chip->urbs_active = chip->nurbs;
 	chip->panel_poll_ms = clamp(panel_poll_ms, 10, 1000);
 	chip->rate = 48000;
 	chip->alt = BF_ALT_1;
