@@ -1183,7 +1183,7 @@ static int babyface_pcm_open(struct snd_pcm_substream *subs)
 	/* Both directions share one clock, so while audio is flowing the rate
 	 * belongs to whoever started it.  Offer that rate alone: a client
 	 * arriving later then negotiates down to it, and the sound server
-	 * resamples, rather than the device being retuned underneath a running
+	 * resamples, rather than the device changing rate underneath a running
 	 * stream.  Advertising the constraint here rather than failing in
 	 * hw_params() is what keeps a PipeWire sink alive - it picks the rate
 	 * on offer instead of asking for one that has to be refused.

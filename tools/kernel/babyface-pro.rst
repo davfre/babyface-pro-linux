@@ -109,7 +109,7 @@ session start waits until 50 ms have passed since the last stop.
 
 Both directions share one clock, so while a substream is set up the
 rate belongs to it: ``open()`` offers a second client that rate alone,
-and the sound server resamples, rather than the device being retuned
+and the sound server resamples, rather than the device changing rate
 under a running stream - as with RME's own drivers, which grey the
 sample rate out while a stream runs.
 
