@@ -1402,11 +1402,11 @@ module_param_array(index, int, NULL, 0444);
 MODULE_PARM_DESC(index, "Index value for the Babyface Pro sound card.");
 module_param_array(id, charp, NULL, 0444);
 MODULE_PARM_DESC(id, "ID string for the Babyface Pro sound card.");
-module_param(frames_per_urb, int, 0644);
+module_param(frames_per_urb, int, 0444);
 MODULE_PARM_DESC(frames_per_urb, "Audio frames per URB, 8..1024 (16 = low-latency floor, 256 = default).");
-module_param(nurbs, int, 0644);
+module_param(nurbs, int, 0444);
 MODULE_PARM_DESC(nurbs, "URBs in flight per direction, 1..16 (16 = low-latency).");
-module_param(panel_poll_ms, int, 0644);
+module_param(panel_poll_ms, int, 0444);
 MODULE_PARM_DESC(panel_poll_ms, "Front-panel poll interval in ms, 10..1000 (20 = default, matches Windows' ~50 Hz).");
 
 /* -- USB driver ------------------------- */
