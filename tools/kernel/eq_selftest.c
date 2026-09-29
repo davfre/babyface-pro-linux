@@ -1,190 +1,22 @@
-/* eq_selftest.c — standalone check for the fixed-point EQ math of
- * eq.c.  Compile & run anywhere:
- *
- *	gcc -O2 -o eq_selftest eq_selftest.c -lm && ./eq_selftest
- *
- * The fixed-point helpers are duplicated here verbatim (single-file
- * test).  Checks:
+/* eq_selftest.c - check of the fixed-point EQ math.  Checks:
  *   - the stored words match the double-precision RBJ reference
  *     (the reference itself reproduces RME's captured words to ~1 LSB,
  *     see tools/usbdump/eq_biquad.md) across the type/freq/Q/gain
- *     sweep — assert <= 4 LSB;
+ *     sweep;
  *   - the response of a bell built from the words peaks at the
  *     labeled freq with the labeled gain (and is flat at DC/Nyquist);
+ *   - an inactive band is the identity with a defined shared scale;
  *   - the low-cut word formula + slope bytes are sane.
+ *
+ * The helpers are the driver's own, pulled out of babyfacepro-ctl.c by
+ * extract_laws.py - run through selftests.sh (links with -lm).
+ *
+ * laws: bf_eq_band_words bf_eq_lc_freq_raw bf_eq_lc_slope_byte
+ *	 BF_EQ_Q27 BF_EQ_LC_OFF
  */
-#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
-
-#define BF_EQ_Q27	(1 << 27)
-#define BF_EQ_LC_OFF	0x04000000
-
-static const int64_t bf_atan_tab[28] = {
-	0x6487ED5, 0x3B58CE1, 0x1F5B760, 0xFEADD5,
-	0x7FD56F, 0x3FFAAB, 0x1FFF55, 0xFFFEB,
-	0x7FFFD, 0x40000, 0x20000, 0x10000,
-	0x8000, 0x4000, 0x2000, 0x1000,
-	0x800, 0x400, 0x200, 0x100,
-	0x80, 0x40, 0x20, 0x10,
-	0x8, 0x4, 0x2, 0x1,
-};
-
-/* ---- fixed-point helpers (Q27 in/out, int64_t intermediates) ---- */
-
-/* sin/cos of an angle in [0, pi/2] (Q27).  Simultaneous CORDIC, 28
- * iterations (~1e-8 residual).  eq_selftest.c verifies the whole
- * pipeline against the double-precision reference.
- */
-static void bf_sincos(int64_t ang, int64_t *sn, int64_t *cs)
-{
-	int64_t x = 0x4DBA76D;	/* 1/1.64676 x 2^27 (CORDIC gain) */
-	int64_t y = 0;
-	int64_t z = ang;
-	int i;
-
-	for (i = 0; i < 28; i++) {
-		int64_t d = z >= 0 ? 1 : -1;
-		int64_t nx = x - d * (y >> i);
-		int64_t ny = y + d * (x >> i);
-
-		x = nx;
-		y = ny;
-		z -= d * bf_atan_tab[i];
-	}
-	*cs = x;
-	*sn = y;
-}
-
-/* 2^u for u in Q27, u in [-2, 2] (gain-amplitude range). */
-static int64_t bf_exp2(int64_t u)
-{
-	int64_t n = u >> 27;
-	int64_t r = u - (n << 27);
-	int64_t rl = (r * 0x58B90C0 + (1 << 26)) >> 27;	/* r.ln2 */
-	int64_t e = BF_EQ_Q27;
-	int64_t term = BF_EQ_Q27;
-	int k;
-
-	for (k = 1; k <= 10; k++) {
-		term = ((term * rl + (1 << 26)) >> 27) / k;
-		e += term;
-	}
-	return n >= 0 ? e << n : e >> -n;
-}
-
-/* The 5 stored words (c0..c3 + shared c4) for one band.
- * type: 1 bell, 2 low shelf, 3 high shelf.  freq_hz, fs in Hz;
- * q100 = Q x 100; gain_x10 = dB x 10.  fs is the stream rate.
- */
-void bf_eq_band_words(int32_t *w, int type, int32_t freq_hz, int32_t q100,
-		      int32_t gain_x10, int32_t fs)
-{
-	int64_t f = freq_hz;
-	int64_t w0, c, s, alpha, A, sq;
-	int64_t b0, b1, b2, a0, a1, a2;
-	int64_t pi = 0x1921FB54;	/* pi, Q27 */
-	int64_t hpi = 0xC90FDAA;	/* pi/2, Q27 */
-	int64_t t;
-	int both = 0, cflip = 0;
-
-	if (gain_x10 == 0 || q100 <= 0) {
-		w[0] = w[1] = w[2] = w[3] = 0;
-		return;
-	}
-
-	/* w0 = 2.pi.f/fs (Q27), reduced to [0, pi/2]. */
-	w0 = (f * BF_EQ_Q27) / fs;
-	w0 = (w0 * 0x3243F6A9) >> 27;	/* x 2.pi */
-	t = w0;
-	if (t > pi) {
-		t -= pi;
-		both = 1;
-	}
-	if (t > hpi) {
-		t = pi - t;
-		cflip = 1;
-	}
-	bf_sincos(t, &s, &c);
-	if (both) {
-		s = -s;
-		c = -c;
-	}
-	if (cflip)
-		c = -c;
-
-	alpha = (s * 100 + q100) / (2 * (int64_t)q100);	/* sin(w0)/(2Q) */
-	/* A = 10^(g/40), sqrt(A): g = gain_x10/10 dB */
-	A = bf_exp2((int64_t)gain_x10 * 0x11021E);
-	sq = bf_exp2((int64_t)gain_x10 * 0x8810F);
-
-	if (type == 1) {
-		int64_t ta = (alpha * A + (1 << 26)) >> 27;
-
-		b0 = BF_EQ_Q27 + ta;
-		b1 = -2 * c;
-		b2 = BF_EQ_Q27 - ta;
-		a0 = BF_EQ_Q27 + (alpha * BF_EQ_Q27 + A / 2) / A;
-		a1 = -2 * c;
-		a2 = BF_EQ_Q27 - (alpha * BF_EQ_Q27 + A / 2) / A;
-	} else {
-		int64_t ap1 = A + BF_EQ_Q27;
-		int64_t am1 = A - BF_EQ_Q27;
-		int64_t cp0 = (am1 * c + (1 << 26)) >> 27;	/* (A-1).c */
-		int64_t cp1 = (ap1 * c + (1 << 26)) >> 27;	/* (A+1).c */
-		int64_t ab = (2 * sq * alpha + (1 << 26)) >> 27;
-
-		if (type == 2) {	/* low shelf */
-			b0 = (A * (ap1 - cp0 + ab) + (1 << 26)) >> 27;
-			b1 = (2 * A * (am1 - cp1) + (1 << 26)) >> 27;
-			b2 = (A * (ap1 - cp0 - ab) + (1 << 26)) >> 27;
-			a0 = ap1 + cp0 + ab;
-			a1 = -2 * (am1 + cp1);
-			a2 = ap1 + cp0 - ab;
-		} else {		/* high shelf */
-			b0 = (A * (ap1 + cp0 + ab) + (1 << 26)) >> 27;
-			b1 = (-2 * A * (am1 + cp1) + (1 << 26)) >> 27;
-			b2 = (A * (ap1 + cp0 - ab) + (1 << 26)) >> 27;
-			a0 = ap1 - cp0 + ab;
-			a1 = -2 * (am1 - cp1);
-			a2 = ap1 - cp0 - ab;
-		}
-	}
-
-	w[0] = (int32_t)((a1 * BF_EQ_Q27 + a0 / 2) / a0);
-	w[1] = (int32_t)((a2 * BF_EQ_Q27 + a0 / 2) / a0);
-	w[2] = (int32_t)((b1 * BF_EQ_Q27 + b0 / 2) / b0);
-	w[3] = (int32_t)((b2 * BF_EQ_Q27 + b0 / 2) / b0);
-	w[4] = (int32_t)((b0 * BF_EQ_Q27 + a0 / 2) / a0);
-}
-
-
-static uint32_t bf_eq_lc_freq_raw(int32_t freq_hz, int32_t slope_db)
-{
-	int64_t f = freq_hz, word;
-
-	if (freq_hz <= 0)
-		return BF_EQ_LC_OFF;
-	switch (slope_db) {
-	case 6:  f = f * 15267 / 10000; break;
-	case 18: f = f * 8061 / 10000;  break;
-	case 24: f = f * 6977 / 10000;  break;
-	}
-	word = (11508 * f * 11656 + (11656 + f) / 2) / (11656 + f);
-	return (uint32_t)word;
-}
-
-static uint8_t bf_eq_lc_slope_byte(int32_t slope_db)
-{
-	switch (slope_db) {
-	case 6:  return 0x01;
-	case 12: return 0x03;
-	case 18: return 0x07;
-	case 24: return 0x0F;
-	}
-	return 0;
-}
 
 /* ---- double-precision reference (the Rust/RME-verified formula) ---- */
 
@@ -303,6 +135,25 @@ int main(void)
 			if (fabs(peak - g) > 0.05 || fabs(dc) > 0.05 ||
 			    fabs(ny) > 0.05) {
 				printf("ERR response-domain check failed\n");
+				fails++;
+			}
+		}
+	}
+
+	/* inactive band (gain 0 or no Q): identity, shared scale 1.0 */
+	{
+		int32_t w[5] = { -1, -1, -1, -1, -1 };
+		int32_t v[5] = { -1, -1, -1, -1, -1 };
+
+		bf_eq_band_words(w, 1, 1000, 70, 0, fs);
+		bf_eq_band_words(v, 1, 1000, 0, 60, fs);
+		printf("inactive band: %d %d %d %d 0x%X\n",
+		       w[0], w[1], w[2], w[3], w[4]);
+		for (i = 0; i < 5; i++) {
+			int32_t want = i == 4 ? BF_EQ_Q27 : 0;
+
+			if (w[i] != want || v[i] != want) {
+				printf("ERR inactive band word %d\n", i);
 				fails++;
 			}
 		}

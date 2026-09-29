@@ -1,6 +1,6 @@
 #!/bin/sh
 # selftests.sh — automated checks for snd-usb-babyface-pro WITHOUT the
-# card: the law selftests (fader/master/display), the module build, and
+# card: the law selftests (fader/master/display/EQ), the module build, and
 # checkpatch.  The hardware regress (regress.sh) is separate — it needs
 # the card + a free device.
 #
@@ -10,10 +10,14 @@ cd "$(dirname "$0")"
 FAIL=0
 
 echo "== law selftests =="
+# Each selftest runs the driver's own law code: extract_laws.py pulls the
+# definitions it names out of the driver sources into a header.
 for t in fader_selftest master_selftest disp_selftest eq_selftest; do
 	LM=""
 	[ "$t" = eq_selftest ] && LM="-lm"
-	if gcc -O2 -Wall -o "/tmp/$t" "$t.c" $LM && "/tmp/$t" > /tmp/$t.out 2>&1; then
+	if python3 extract_laws.py "$t.c" > "/tmp/$t-laws.h" &&
+	   gcc -O2 -Wall -Werror -include "/tmp/$t-laws.h" -o "/tmp/$t" "$t.c" $LM &&
+	   "/tmp/$t" > /tmp/$t.out 2>&1; then
 		echo "  PASS  $t"
 		grep -E '^ok' /tmp/$t.out | tail -1 > /dev/null
 	else

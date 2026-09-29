@@ -1,30 +1,12 @@
-/* Quick check of bf_mix_display (panel.c) against the captured anchors. */
+/* disp_selftest.c - check of bf_mix_display (the MIX-mode VU display
+ * law) against the captured anchors.
+ *
+ * The helper is the driver's own, pulled out of babyfacepro-ctl.c by
+ * extract_laws.py - run through selftests.sh.
+ *
+ * laws: bf_mix_display
+ */
 #include <stdio.h>
-
-static int bf_mix_display(int db2)
-{
-	static const struct {
-		int db2;
-		int disp;
-	} pts[] = {
-		{ -124, 0 }, { -108, 1 }, {  -96, 2 }, {  -85, 3 },
-		{  -70, 4 }, {  -57, 5 }, {  -15, 10 }, {  -13, 11 },
-		{   -9, 12 },
-	};
-	int i;
-
-	if (db2 <= pts[0].db2)
-		return 0;
-	for (i = 0; i < 8; i++) {
-		if (db2 <= pts[i + 1].db2) {
-			int num = (db2 - pts[i].db2) * (pts[i + 1].disp - pts[i].disp);
-			int den = pts[i + 1].db2 - pts[i].db2;
-			return pts[i].disp + (num + den / 2) / den;
-		}
-	}
-	return pts[8].disp + ((db2 - pts[8].db2) / 4 < 0 ? 0 :
-		((db2 - pts[8].db2) / 4 > 12 ? 12 : (db2 - pts[8].db2) / 4));
-}
 
 int fails;
 
