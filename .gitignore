@@ -10,3 +10,5 @@ out/
 
 # local linux-next checkout for RFC re-validation (not part of the repo)
 linux-next-src/
+# scratch trees for re-cutting a patch series
+.recut/
