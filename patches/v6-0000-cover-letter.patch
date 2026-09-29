@@ -1,0 +1,135 @@
+From 9b493a6e547d2a42e6926a0f656beb1d5d2fee8f Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Isma=C3=AFl=20Bahloul?= <i.bahloul01@gmail.com>
+Date: Tue, 29 Sep 2026 07:45:34 +0000
+Subject: [RFC PATCH v6 0/8] ALSA: usb: add RME Babyface Pro driver (proprietary mode)
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Hi Takashi,
+
+This is v6 of the RME Babyface Pro proprietary-mode driver.  The split
+is the one you asked for in the v4 review and that v5 introduced: a
+minimal core first, the mixer added piece by piece, suspend/resume near
+the end, the front panel and the DSP EQ last, and a design document.
+v6 keeps that split and folds in the fixes made since v5, most of them
+in the stream core; it is rebased on next-20260928.
+
+Changes since v5:
+
+ - Stream sessions (patch 1, David Fredman).  A session now lives from
+   the first prepare to the last hw_free; trigger START/STOP only
+   gates the audio the URB handlers move, so an xrun restart no longer
+   tears the session down.  A session start sends what the RME Windows
+   driver sends (rate write, trigger pair, URBs, arm) instead of
+   re-running the cold init and replaying the whole mixer state: about
+   1 ms instead of about 1 s, and it waits until 50 ms have passed
+   since the previous stop, since a session triggered within ~15 ms of
+   the last one comes up silent.  While a stream is set up, open()
+   offers a second client its rate alone.  After three consecutive bad
+   URBs the handlers stop resubmitting; disconnect and suspend kill the
+   URBs before cancelling the work their handlers queue; hw_params is
+   refused once the device is gone; the handlers read the substream
+   pointers under RCU.
+
+ - Core fixes (patch 1): a failed probe no longer dereferences a NULL
+   URB/DMA array in the unwind; a partially filled playback URB plays
+   silence after the queued frames instead of the previous URB's audio.
+
+ - Mixer (patches 2-4): a volume change no longer unmutes a muted
+   output (David Fredman); the power-on default routes only the
+   playback channels; the fader controls validate a value before
+   narrowing it; a failed preamp write no longer leaves the cache
+   claiming the new state; a re-applied DIM rebuilds its restore point.
+   The saved-state list is purged after usb_deregister(), not before.
+
+ - Front panel (patch 6): a DIM press is reported through a "DIM
+   Button Press Count" control for a mixer application to act on,
+   rather than the driver changing a level itself; the wheel ignores a
+   muted output and notifies the volume controls; the button control
+   is notified on a press (David Fredman for the first three).  The
+   state shared with the control callbacks is accessed with
+   READ_ONCE/WRITE_ONCE, and the mixer state is saved at disconnect
+   only after the poll has stopped.
+
+ - DSP EQ (patch 7): the EQ is saved and re-uploaded across resume and
+   a re-probe; an inactive band uploads a defined shared scale; the Q
+   controls start at 1.0 instead of an out-of-range 0.
+
+ - The split itself.  v5's patches 2-7 had lost the DIM restore-point
+   update on a Phones volume change; it is back, in patch 4.  Resume
+   now re-applies the routing flags, which v5 left out.  Phase, split
+   and trim are re-applied after a re-probe from patch 3 on, where v5
+   waited until patch 4.  No comment, Kconfig help text or MAINTAINERS
+   entry refers to the series any more, and the MAINTAINERS entry lists
+   linux-sound.
+
+ - The frames_per_urb, nurbs and panel_poll_ms parameters are 0444:
+   they are read once at probe.
+
+ - The design document describes the current stream model.
+
+Every patch builds in-tree on its own against next-20260928 with W=1
+and no warnings.  Run against the generated patch files, checkpatch
+--strict reports no errors, four warnings and one check, all known
+false positives: 'ang' (the CORDIC angle) twice and BIT() for a signed
+Q27 constant in the EQ patch, and the "does MAINTAINERS need
+updating?" note on the two patches that add files, which patch 1's
+MAINTAINERS entry covers.
+
+Validation: FILL-IN-BEFORE-SENDING (regress.sh on the v6 tree, on the
+Pro FS).
+
+Known limitations, unchanged from v5:
+
+ - USB autosuspend is not supported; it is disabled at probe.  S3
+   suspend/resume works.
+
+ - A few protocol details remain open (documented in the source, not
+   blocking): the preamp readback index semantics, a width
+   strip-ownership edge case, whether DIM's scope follows TotalMix's
+   Main Out setting, and the exact high-frequency warping of the EQ
+   coefficients against the vendor curve.
+
+ - The URB size and count are load-time parameters.  Sizing the URBs
+   from the period the application asks for is being worked on
+   separately and is not part of this series.
+
+Disclosure: as with previous versions, the reverse-engineering and
+substantial portions of the kernel implementation were written with
+heavy assistance from AI coding assistants.  All of it was verified by
+hand on real hardware; the human authors remain responsible for the
+result via Signed-off-by.
+
+Thanks,
+Ismaïl
+
+Ismaïl Bahloul (8):
+  ALSA: usb: add RME Babyface Pro driver core (probe, PCM stream)
+  ALSA: usb: babyfacepro: add output masters and crosspoint routing
+  ALSA: usb: babyfacepro: add mic preamp, phantom/pad and input trim
+  ALSA: usb: babyfacepro: add routing flags and varispeed pitch
+  ALSA: usb: babyfacepro: add S3 suspend/resume
+  ALSA: usb: babyfacepro: add the front-panel poll and controls
+  ALSA: usb: babyfacepro: add the hardware DSP EQ
+  Documentation: sound: add the Babyface Pro proprietary-mode design doc
+
+ Documentation/sound/cards/babyface-pro.rst |  168 +
+ Documentation/sound/cards/index.rst        |    1 +
+ MAINTAINERS                                |    6 +
+ sound/usb/Kconfig                          |   17 +
+ sound/usb/Makefile                         |    2 +-
+ sound/usb/babyfacepro/Makefile             |    4 +
+ sound/usb/babyfacepro/babyfacepro-ctl.c    | 3853 ++++++++++++++++++++
+ sound/usb/babyfacepro/babyfacepro.c        | 1825 +++++++++
+ sound/usb/babyfacepro/babyfacepro.h        |  540 +++
+ 9 files changed, 6415 insertions(+), 1 deletion(-)
+ create mode 100644 Documentation/sound/cards/babyface-pro.rst
+ create mode 100644 sound/usb/babyfacepro/Makefile
+ create mode 100644 sound/usb/babyfacepro/babyfacepro-ctl.c
+ create mode 100644 sound/usb/babyfacepro/babyfacepro.c
+ create mode 100644 sound/usb/babyfacepro/babyfacepro.h
+
+-- 
+2.55.0
+

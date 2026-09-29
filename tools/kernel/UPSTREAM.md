@@ -504,6 +504,57 @@ sh tools/kernel/regress.sh --dur 1 --mixer-restore --disconnect-test
 /lib/modules/$(uname -r)/build/scripts/checkpatch.pl --no-tree --file <file>
 ```
 
+## v6 - CUT 2026-09-29, not sent
+
+No reply to v5 after 11 days; v6 folds in the 23 driver commits made on
+`main` since the v5 cut (6b3a7f2), 11 of them David Fredman's.  Base:
+next-20260928.  Integration branch `v6-split` in
+`~/DATA/05_Code/linux-next-src`; patches in `patches/v6-*.patch`.
+
+Same 8-patch split as v5, derived top-down rather than by forward
+hunk placement: the final state is a 3-way merge of `main` and the v5
+final tree (main's code, v5's per-patch layout), and each earlier state
+is the next one minus what the matching v5 patch added
+(`git merge-file` against the v5 states), with every conflict resolved
+by hand.  The scratch trees and scripts are in `.recut/v6w/`.
+
+Checked:
+- every definition in the final state compared against `main`: the
+  only differences are the split's own (control creation split per
+  feature, the crosspoint helpers moved to babyfacepro-ctl.c, the fader
+  curve placed before its first user so no forward declarations are
+  needed, duplicate prototypes merged);
+- per state: W=1 build, checkpatch --strict, no comment citing a
+  function the state does not have yet, no orphaned #define/table
+  beyond `BF_MASTER_8_0DB` (kept with the 8-bit scale it documents);
+- per commit, in-tree against next-20260928: `make LLVM=1 W=1
+  sound/usb/babyfacepro/`, no warnings;
+- on the generated patch files: checkpatch --strict 0 errors, 4
+  warnings, 1 check (all known false positives), no non-ASCII outside
+  the author name, `get_maintainer.pl` (drop the "Mark Brown" line,
+  the same linux-next infra artefact as for v5).
+
+Found in v5 while re-deriving, and fixed in v6:
+- the DIM restore-point update in `bf_master_put()` was dropped by the
+  v5 split (a "lands with a later patch" placeholder comment survived
+  to the final state); back in patch 4;
+- phase/split/trim were saved from patch 3 but only re-applied from
+  patch 4; `bf_state_apply_flags()` now starts in patch 3 with those;
+- comments, the Kconfig help and the MAINTAINERS entry referred to the
+  series ("later patches", "this patch", "this diff"); none do now,
+  and the entry lists linux-sound instead of alsa-devel.
+
+Also fixed on `main` today and folded in: module parameters 0444, two
+comments still describing the pre-95f9b11 session start, a checkpatch
+alignment CHECK from e0ab7e4, and the design doc (duplicated lines
+since bebc556, stream model and DIM out of date).
+
+**Before sending:** the cover letter carries `FILL-IN-BEFORE-SENDING`
+in its validation paragraph - the v6 tree has only been built, not
+run.  Needs `regress.sh --dur 1 --mixer-restore --disconnect-test` on
+the final tree (it is `main` modulo layout) on the Pro FS, then the
+paragraph filled in and the marker gone.
+
 ## v5 - SENT 2026-09-18
 
 Mailed via `git send-email` to linux-sound@vger.kernel.org, Cc
