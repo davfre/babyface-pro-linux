@@ -208,14 +208,13 @@ int babyface_write_default_mixer(struct snd_usb_babyface *chip)
 		chip->muted[out] = false;
 	}
 
-	/* Every source into every output pair, L and R, at 0 dB (the
-	 * standard map, plus the low map on AN1/2 - see bf_xpoint_write's
-	 * own comment for why AN1/2 needs both).  The addresses use the
-	 * source's idx_l/idx_r on the canonical block - writing the raw
-	 * index on both bases would put PB1 R on the L side and PB1 L on
-	 * the R side (L+R on both = mono).  The "cross" registers
-	 * (L-reg idx_r / R-reg idx_l) are left at 0; the restore at stream
-	 * start re-writes the same addresses from the cache.
+	/* Every playback source into every output pair, L and R, at 0 dB,
+	 * and the hardware inputs off (the standard map, plus the low map
+	 * on AN1/2 - see bf_xpoint_write's own comment for why AN1/2 needs
+	 * both).  The addresses use the source's idx_l/idx_r on the
+	 * canonical block - writing the raw index on both bases would put
+	 * PB1 R on the L side and PB1 L on the R side (L+R on both = mono).
+	 * The "cross" registers (L-reg idx_r / R-reg idx_l) are cleared.
 	 */
 	for (out = 0; out < 6; out++) {
 		unsigned int blk = bf_xpoint_block[out];
@@ -249,11 +248,11 @@ int babyface_write_default_mixer(struct snd_usb_babyface *chip)
 	return bf_settings_write(chip);
 }
 
-/* The device resets its output masters to mute when a stream session
- * starts (hardware-verified 2026-08-24: after a stream start the
- * output stays silent until a master write lands - only a write
- * un-mutes the 8-bit register).  Re-apply the six output masters +
- * mutes from the cache; also used by the PM restore path.
+/* The cold init's 0x16 clear leaves the 8-bit masters muted: the
+ * output stays silent until a master write lands (hardware-verified
+ * 2026-08-24 - only a write un-mutes the 8-bit register).  Re-apply
+ * the six output masters + mutes from the cache; used by the state
+ * restore that follows the cold init.
  */
 int bf_apply_masters(struct snd_usb_babyface *chip)
 {
