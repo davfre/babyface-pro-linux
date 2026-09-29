@@ -2750,8 +2750,9 @@ static void bf_panel_tick(struct snd_usb_babyface *chip)
 	else if (delta < -8)
 		delta += 16;
 	if (delta && cls == pcls) {
-		WRITE_ONCE(chip->panel_wheel, clamp(READ_ONCE(chip->panel_wheel) + delta,
-					  SHRT_MIN, SHRT_MAX));
+		WRITE_ONCE(chip->panel_wheel,
+			   clamp(READ_ONCE(chip->panel_wheel) + delta,
+				 SHRT_MIN, SHRT_MAX));
 		bf_panel_notify(chip, BF_PANEL_KCTL_WHEEL);
 		/* Wheel by mode (LINUX-VALIDATION sec. 12, the TotalMix
 		 * emulator): MIX -> monitoring level, OUT (0x8x/0x9x) -> the
