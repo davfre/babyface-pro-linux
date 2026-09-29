@@ -379,6 +379,12 @@ struct snd_usb_babyface {
 	u16 dim_saved[2];		/* pre-DIM Phones master (out 1 L/R) */
 	bool dim;			/* DIM engaged (fixed -20 dB on Phones) */
 	u16 xpoint[6][14][2];		/* cached crosspoints (out, src, L/R) */
+	/* The controls the front panel changes on its own (the MIX wheel,
+	 * the IN wheel, SET), for snd_ctl_notify.
+	 */
+	struct snd_kcontrol *xpoint_kctl[6][14];
+	struct snd_kcontrol *gain_kctl[4];
+	struct snd_kcontrol *phantom_kctl[2];
 	bool phase[4];			/* polarity invert, AN1-4 (bf_sources 0-3);
 					 * xpoint[][0..3][0] stays the PLAIN
 					 * value, only the wire write is

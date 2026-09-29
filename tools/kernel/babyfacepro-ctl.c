@@ -950,6 +950,7 @@ int babyface_create_xpoints(struct snd_usb_babyface *chip)
 			err = snd_ctl_add(chip->card, kctl);
 			if (err < 0)
 				return err;
+			chip->xpoint_kctl[out][src] = kctl;
 		}
 	}
 
@@ -1949,6 +1950,7 @@ int babyface_create_controls(struct snd_usb_babyface *chip)
 		err = snd_ctl_add(chip->card, kctl);
 		if (err < 0)
 			return err;
+		chip->phantom_kctl[i] = kctl;
 	}
 
 	for (i = 0; i < 2; i++) {
@@ -1995,6 +1997,7 @@ int babyface_create_controls(struct snd_usb_babyface *chip)
 		err = snd_ctl_add(chip->card, kctl);
 		if (err < 0)
 			return err;
+		chip->gain_kctl[i] = kctl;
 	}
 	return 0;
 }
@@ -2181,6 +2184,14 @@ static int bf_mix_display(int db2)
 	       clamp((db2 - pts[ARRAY_SIZE(pts) - 1].db2) / 4, 0, 12);
 }
 
+/* Tell ALSA clients that the front panel changed a mixer control. */
+static void bf_panel_notify_kctl(struct snd_usb_babyface *chip,
+				 struct snd_kcontrol *kctl)
+{
+	if (kctl)
+		snd_ctl_notify(chip->card, SNDRV_CTL_EVENT_MASK_VALUE, &kctl->id);
+}
+
 /* The kernel driver plays the TotalMix role for the MIX button (the
  * standalone emulator is hardware-validated in tuxmix-core/src/panel.rs
  * + usb.rs): one wheel click in fader mode = +/-0.5 dB on the SELECT-
@@ -2239,6 +2250,7 @@ static void bf_panel_mix_wheel(struct snd_usb_babyface *chip, int delta)
 				 s->idx_r) | flag);
 		chip->xpoint[out][targets[i]][0] = raw;
 		chip->xpoint[out][targets[i]][1] = raw;
+		bf_panel_notify_kctl(chip, chip->xpoint_kctl[out][targets[i]]);
 		/* MIX-mode VU display shadow (0x1A 0x000A+mic): TotalMix
 		 * mirrors the monitoring level into the panel display family
 		 * (cap_mix/cap_panel.pcap) - the input VU segments follow it.
@@ -2575,7 +2587,10 @@ static void bf_panel_gain_wheel(struct snd_usb_babyface *chip, int delta)
 		u8 raw = bf_gain_raw(mic, db);
 
 		bf_vendor_write(chip, BF_REQ_GAIN, raw, BF_REG_PANEL_GAIN + mic);
-		chip->gain[mic] = db;
+		if (db != chip->gain[mic]) {
+			chip->gain[mic] = db;
+			bf_panel_notify_kctl(chip, chip->gain_kctl[mic]);
+		}
 	}
 	mutex_unlock(&chip->mutex);
 }
@@ -2664,6 +2679,10 @@ static void bf_panel_set_phantom(struct snd_usb_babyface *chip)
 	}
 	if (bf_preamp_state_write(chip) < 0)
 		chip->preamp = old;
+	if ((chip->preamp ^ old) & BF_PREAMP_48V_MIC1)
+		bf_panel_notify_kctl(chip, chip->phantom_kctl[0]);
+	if ((chip->preamp ^ old) & BF_PREAMP_48V_MIC2)
+		bf_panel_notify_kctl(chip, chip->phantom_kctl[1]);
 	for (m = 0; m < 4; m++)
 		chip->panel_mix_disp[m] = 0;
 	mutex_unlock(&chip->mutex);
