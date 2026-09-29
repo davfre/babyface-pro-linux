@@ -36,22 +36,22 @@ sudo modprobe snd-usb-babyface-pro
 
 Then the mixer is the normal ALSA control set: `amixer -c <n> controls`.
 
-> **Low-latency profiles — off by default, worth turning on.** The driver ships the TotalMix-parity 256 samples (≈5.3 ms) so a fresh install is stable everywhere. Measured at 48 kHz, full-duplex:
+> **Low-latency profiles — off by default.** The driver ships the TotalMix-parity 256 samples (≈5.3 ms) so a fresh install is stable everywhere. Measured at 48 kHz, full-duplex:
 >
 > | `frames_per_urb` | `nurbs` | period | result |
 > |---|---|---|---|
 > | 256 *(default)* | 8 | 5.3 ms | 100 % stable |
-> | **32** | **8** | **0.67 ms** | **100 % stable — recommended** |
+> | 32 | 8 | 0.67 ms | clean in the regression sweeps — see the note below |
 > | 16 | 16 | 0.33 ms | playback rock-solid, but capture drops ~1 sample / 7 s |
 >
-> Pick **32/8** unless you are monitoring only: the 0.33 ms floor is asymmetric, solid for playback but lossy for *recording*. The DKMS package installs a commented template at `/usr/lib/modprobe.d/snd-usb-babyface-pro.conf`; uncomment a line there (or override in `/etc/modprobe.d/`) and reload the module. Latency is quantised to the URB boundary, so it does not depend on the period size your DAW asks for.
+> **32/8 has one open issue:** once, the unit stopped exchanging audio altogether (it still answered control requests) and only came back after being unplugged — a module reload, a USB re-enumeration and a host reboot did not help. Once, a single 192 kHz session came up silent and the next one was fine. Neither has been reproduced since, and neither has been seen at the default 256. Use 32/8 if you want the latency and can live with that; if the card goes silent, unplug and replug it. The 0.33 ms floor (16/16) is asymmetric, solid for playback but lossy for *recording*. The DKMS package installs a commented template at `/usr/lib/modprobe.d/snd-usb-babyface-pro.conf`; uncomment a line there (or override in `/etc/modprobe.d/`) and reload the module. Latency is quantised to the URB boundary, so it does not depend on the period size your DAW asks for.
 > **Full build / load / test walkthrough** (manual build, hardware checks, front-panel probes) → **[`LINUX-TEST.md`](LINUX-TEST.md)**
 
 ## Status & features
 
 **Hardware-validated** on a real Babyface Pro FS, and reported to run unmodified on an original (non-FS) Babyface Pro:
 
-- **Streaming** — 32–192 kHz, 2–12 channels, interrupt-URB, full-duplex; 32-frame URBs (0.67 ms @ 48 kHz) run clean across the sweep, 16-frame URBs (0.33 ms, monitoring-grade) are playback-solid but drop the occasional capture buffer.
+- **Streaming** — 32–192 kHz, 2–12 channels, interrupt-URB, full-duplex; 32-frame URBs (0.67 ms @ 48 kHz) run clean across the sweep (one open issue, see above), 16-frame URBs (0.33 ms, monitoring-grade) are playback-solid but drop the occasional capture buffer.
 - **Mixer (ALSA controls)** — 6 output masters + mutes, the full 6×14 crosspoint matrix, 4 preamp gains, phantom power + PAD, pitch/varispeed, loopback, width, FX send, MS processing, input link, AN 1>2, plus clock source, ref level, phase and trim.
 - **Front panel** (the host is "in the loop", like TotalMix) — every button, the wheel and the IN/OUT/MIX selection are decoded and exposed as read-only controls; the driver acts on SET (phantom), the wheel and MIX-mode, including the VU display. DIM presses are reported through `DIM Button Press Count` for a mixer application to act on; the `Dim Switch` control still applies the fixed Phones dim.
 - **PM** — suspend/resume with full mixer-state restore.
