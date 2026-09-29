@@ -549,11 +549,25 @@ comments still describing the pre-95f9b11 session start, a checkpatch
 alignment CHECK from e0ab7e4, and the design doc (duplicated lines
 since bebc556, stream model and DIM out of date).
 
-**Before sending:** the cover letter carries `FILL-IN-BEFORE-SENDING`
-in its validation paragraph - the v6 tree has only been built, not
-run.  Needs `regress.sh --dur 1 --mixer-restore --disconnect-test` on
-the final tree (it is `main` modulo layout) on the Pro FS, then the
-paragraph filled in and the marker gone.
+Hardware-tested 2026-09-29 on the Pro FS (v6 final tree, out-of-tree
+against 7.2.6): `regress.sh --dur 1 --mixer-restore --disconnect-test`
+41/41 twice; each of patches 1-7 loaded alone and streamed full duplex
+at 48/192 kHz (one unreproduced xrun burst right after loading patch 4,
+0/28 on retry); at frames_per_urb=32, 23/23 in three reload rounds.
+
+Open, at the 32-frame profile only: once the unit stopped completing
+interrupt URBs entirely (control requests still answered, panel poll
+fine, 467-write cold init all status 0, alt 1 set) and stayed that way
+across module reload, USB re-enumeration and a host reboot - only
+unplugging it (bus power off) recovered it.  Hit while chaining
+regress.sh runs at 32/8 across rates with a module swap in between;
+not reproduced in the step-by-step and 3-round replays.  Once, a single
+192 kHz/64 session came up with no URB completions and the next one was
+fine.  Worth a dedicated investigation (usbmon of the failing session
+start vs a good one) before recommending 32/8 as loudly as the README
+does.  Both are disclosed in the cover letter.
+
+Ready to send, pending explicit go-ahead.
 
 ## v5 - SENT 2026-09-18
 

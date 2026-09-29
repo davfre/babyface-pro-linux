@@ -77,8 +77,30 @@ Q27 constant in the EQ patch, and the "does MAINTAINERS need
 updating?" note on the two patches that add files, which patch 1's
 MAINTAINERS entry covers.
 
-Validation: FILL-IN-BEFORE-SENDING (regress.sh on the v6 tree, on the
-Pro FS).
+Validation, on a Babyface Pro FS with the final tree (built
+out-of-tree against 7.2.6 from the same sources):
+
+ - The regression suite passes 41/41, in two separate runs: a
+   full-duplex sweep of all nine rates at periods 256 to 2048 with no
+   xrun on either side, runtime period/buffer renegotiation within one
+   session, 30 open/start/stop/close cycles, the mixer state restored
+   across an unbind/rebind, and an unbind in the middle of a capture.
+
+ - Each of patches 1-7 was also loaded on its own and streamed full
+   duplex at 48 and 192 kHz.  One run at 48 kHz right after loading
+   patch 4 saw one playback and two capture xruns; 28 further runs of
+   patches 4 and 7, with the same timing, saw none.
+
+ - With 32-frame URBs (frames_per_urb=32, the 0.67 ms profile), the
+   sweep at 48, 96 and 192 kHz down to a 32-frame period passes 23/23
+   in three rounds, each after a module reload.  Two things were seen
+   at this profile and are not understood yet: once, a session at
+   192 kHz came up with the device completing no URB (the next session
+   was fine), and once, earlier, the unit stopped completing URBs
+   altogether until it was power-cycled - a module reload, a USB
+   re-enumeration and a host reboot did not bring it back.  The second
+   has not happened again in the runs above.  The default 256-frame
+   profile has shown neither.
 
 Known limitations, unchanged from v5:
 
