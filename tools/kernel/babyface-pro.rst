@@ -5,15 +5,10 @@ RME Babyface Pro / Pro FS (snd-usb-babyface-pro)
 =================================================
 
 This document describes the design of the ``snd-usb-babyface-pro``
-driver for reviewers who need the big picture before reading the
-patches - what problem the driver solves, why it is a standalone
+driver - what problem the driver solves, why it is a standalone
 driver instead of a snd-usb-audio quirk, and the four design
-decisions (stream model, protocol shape, mixer-state persistence,
-front-panel emulation) that shape most of the code.  The patch series
-itself is split by feature (core+PCM, then masters+crosspoint,
-preamp, routing flags, suspend/resume, front panel, DSP EQ, in that
-order) so each patch can be read and built on its own; this document
-does not repeat what each patch's own commit message already covers.
+decisions (protocol shape, stream model, mixer-state persistence,
+front-panel emulation) that shape most of the code.
 
 Two USB personalities, one device
 ==================================
@@ -52,12 +47,14 @@ a 16-bit value/index pair - there is no larger command structure.
 The commonly used ones are:
 
 ======  ========================================
-0x10    settings word / stream start trigger
+0x10    settings word, rate family, stream trigger
 0x12    16-bit crosspoint and output-master writes
+0x14    stream session arm
 0x16    cold-init register clear
 0x17    front-panel + preamp state (read and write)
-0x1a    8-bit gain / output-master companion writes
-0x1b    clock DDS quads (base rate and varispeed)
+0x1a    8-bit gain / output-master writes
+0x1b    varispeed (DDS quad)
+0x1d    stream session start
 ======  ========================================
 
 The full register map, decoded from Windows USB captures and
@@ -74,58 +71,51 @@ device will accept a write blindly and never confirm what it actually
 holds.  Two consequences follow directly from this:
 
 * The ``struct snd_usb_babyface`` device state (see
-  ``babyface.h``) is not a cache in the usual sense of "avoid a
- ``babyface.h``) is not a cache in the usual sense of "avoid a
+  ``babyfacepro.h``) is not a cache in the usual sense of "avoid a
   slow read" - it is the *only* record of what the hardware should
- slow read" - it is the *only* record of what the hardware should
   currently hold.  Every mixer control's ``.get`` callback reads this
- currently hold.  Every mixer control's ``.get`` callback reads this
   state directly; none of them ever talks to the device.
- state directly; none of them ever talks to the device.
 
-* A full reset of the device's registers - which happens on every
-  cold init - has to be followed by replaying the *entire* cached
- cold init - has to be followed by replaying the *entire* cached
-  state back, in the right order, or the card comes back silent or at
- state back, in the right order, or the card comes back silent or at
-  the wrong levels.  This is what ``babyface_restore_state()`` and
- the wrong levels.  This is what ``babyface_restore_state()`` and
-  ``bf_state_apply_flags()`` do (see "Mixer-state persistence" below).
- ``bf_state_apply_flags()`` do (see "Mixer-state persistence" below).
+* A full reset of the device's registers - which the cold init at
+  probe and at resume does - has to be followed by replaying the
+  *entire* cached state back, in the right order, or the card comes
+  back silent or at the wrong levels.  This is what
+  ``babyface_restore_state()`` and ``bf_state_apply_flags()`` do (see
+  "Mixer-state persistence" below).
 
-The asynchronous stream model
-==============================
+The stream model
+================
 
-The PCM stream is not started or stopped directly by
-``.trigger()``.  Instead, ``.trigger()`` only adjusts a shared
-``stream_users`` counter (0..2, one per running substream - playback
-and capture share one physical stream) and schedules
-``stream_work``, a work item that runs in process context because
-starting a session means sleeping USB control transfers
-(cold init, the session-arm sequence) followed by submitting the
-interrupt URBs:
+Playback and capture share one physical stream: the device only
+advances it while both interrupt endpoints have a pending URB, so the
+IN and OUT URBs are always submitted as a pair, and both directions run
+at one sample rate.  The driver runs one stream *session* for both
+substreams:
 
-* **users 0 -> 1** (first substream starts): cold-init the device,
-  send the session-start trigger pair, submit the IN/OUT URBs (always
- send the session-start trigger pair, submit the IN/OUT URBs (always
-  as a matched pair - the device does not advance the stream unless
- as a matched pair - the device does not advance the stream unless
-  both directions have a pending transfer), arm the session, then
- both directions have a pending transfer), arm the session, then
-  replay the entire cached mixer state (masters, crosspoints, preamp,
- replay the entire cached mixer state (masters, crosspoints, preamp,
-  flags, pitch) since cold-init just wiped it.
- flags, pitch) since cold-init just wiped it.
+* ``hw_params`` counts a substream as a user of the session;
+* ``prepare`` starts the session if it is not running - the rate write,
+  the session trigger pair, the IN/OUT URBs, then the arm - which is
+  what the RME Windows driver sends at a stream start;
+* trigger START/STOP only decides whether the URB handlers move that
+  substream's audio.  The URBs keep running either way, carrying
+  silence while nothing plays, so an xrun restart does not restart the
+  session;
+* ``hw_free`` drops the user, and the last one stops the session.
 
-* **users 1 -> 0** (last substream stops): kill the URBs and let the
-  session go idle.
- session go idle.
+The device keeps its mixer registers between sessions, so a session
+start writes no mixer state.  A session triggered within about 15 ms of
+the previous one stopping comes up with the outputs silent, so a
+session start waits until 50 ms have passed since the last stop.
 
-So the device always has exactly one live session regardless of how
-many ALSA substreams are open, and a rate or format change on one
-substream transparently restarts that shared session under the other
-one - the other side sees a brief rate step (PipeWire's resampler
-absorbs it) rather than the ``open()`` failing with ``-EBUSY``.
+Both directions share one clock, so while a substream is set up the
+rate belongs to it: ``open()`` offers a second client that rate alone,
+and the sound server resamples, rather than the device being retuned
+under a running stream - as with RME's own drivers, which grey the
+sample rate out while a stream runs.
+
+URB completions run in interrupt context; the work that needs to sleep
+(stopping the session after repeated URB errors) runs from
+``stream_work``.
 
 Mixer-state persistence across re-probes
 ==========================================
@@ -136,14 +126,13 @@ device for a sink and the project's own TuxMix userspace daemon do
 this via libusb.  That detaches the kernel driver and the ALSA card
 disappears for the duration; when the client releases the interface,
 the driver re-probes.  The device keeps its register contents across
-this detach, but the driver's own cold-init (required at every
-session start, see above) clears them - so the driver saves the
-in-memory mixer state at ``disconnect()`` and restores it at the next
-``probe()``, keyed by the device's USB serial number (or its sysfs
-path, if it has no serial) so the same physical unit gets its state
-back across the cycle.  The same state is also what a system-suspend
-resume replays, since the device loses its registers across a suspend
-the same way.
+this detach, but the cold init the probe runs clears them - so the
+driver saves the in-memory mixer state at ``disconnect()`` and
+restores it at the next ``probe()``, keyed by the device's USB serial
+number (or its sysfs path, if it has no serial) so the same physical
+unit gets its state back across the cycle.  The same state is also
+what a system-suspend resume replays, since the device loses its
+registers across a suspend the same way.
 
 Front-panel emulation: the driver plays TotalMix's role
 ==========================================================
@@ -158,9 +147,11 @@ but the proprietary USB mode this driver targets always has a host
 attached, so this driver has to do what TotalMix does: poll 0x17 on
 a delayed work item (``panel_poll_ms`` module parameter, default
 20 ms to match TotalMix's own ~50 Hz), decode the button flash and
-signed wheel delta, and apply the resulting change (an output fader
-step, a preamp gain step, a phantom toggle, DIM) exactly like the
-corresponding ALSA control's ``.put`` would.  The front-panel ALSA
+signed wheel delta, and apply the resulting change (an output level
+step, a preamp gain step, a monitoring level step, a phantom toggle)
+exactly like the corresponding ALSA control's ``.put`` would.  A DIM
+press is only counted, for a mixer application to act on.  The
+front-panel ALSA
 controls this driver exposes are the read side of this: a way for
 userspace (WirePlumber, TuxMix) to observe what the physical panel is
 doing, not a way to drive the hardware.
