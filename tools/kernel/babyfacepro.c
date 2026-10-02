@@ -583,6 +583,7 @@ void bf_state_save(struct snd_usb_babyface *chip)
 	s->fx_send = chip->fx_send;
 	s->dim = chip->dim;
 	memcpy(s->eq, chip->eq, sizeof(s->eq));
+	memcpy(s->panel_sel, chip->panel_sel, sizeof(s->panel_sel));
 	mutex_unlock(&bf_saved_mutex);
 }
 
@@ -621,6 +622,7 @@ int bf_state_restore(struct snd_usb_babyface *chip)
 		chip->fx_send = s->fx_send;
 		chip->dim = s->dim;
 		memcpy(chip->eq, s->eq, sizeof(chip->eq));
+		memcpy(chip->panel_sel, s->panel_sel, sizeof(chip->panel_sel));
 		ret = 1;
 		break;
 	}
@@ -1669,6 +1671,7 @@ static int babyface_probe(struct usb_interface *intf,
 	chip->alt = BF_ALT_1;
 	chip->frame_bytes = 56;
 	chip->preamp = BF_PREAMP_BASE;
+	memset(chip->panel_sel, -1, sizeof(chip->panel_sel));
 	mutex_init(&chip->mutex);
 	spin_lock_init(&chip->lock);
 	atomic_set(&chip->urb_err, 0);

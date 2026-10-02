@@ -159,10 +159,15 @@ doing, not a way to drive the hardware.
 Some panel state - which channel SELECT currently has chosen, for
 instance - is not part of the 0x17 readback at all and exists only on
 the device's own internal state machine, which the driver cannot
-read.  That state is tracked host-side and deliberately re-synced to
-a known value (nothing selected) for the first few seconds after
-probe, because a stale alsactl-restored value would otherwise
-silently desync from the physical LEDs.  The relevant code comments
-(``babyface_panel_start()``, the ``panel_select_armed`` handling in
-``bf_panel_tick()``) explain the specific desync scenarios this
-guards against.
+read.  The unit keeps one such selection for each IN pair, across IN
+switches and even across a power cycle; its LEDs stay dark until the
+next SELECT press, which only shows the selection again, and later
+presses step it.  The driver follows the presses, but after a load it
+cannot know what the unit holds, so it starts without a selection:
+SET and the wheel then do nothing instead of acting on a channel that
+may not be the lit one, until the "Front Panel Select" control is set
+to what the LEDs show.  A re-probe, which does not change the unit,
+keeps what the driver had.  The value alsactl restores shortly after
+probe says nothing about the unit and is ignored.  The relevant code
+comments (``babyface_panel_start()``, the ``panel_select_armed``
+handling in ``bf_panel_tick()``) explain the details.

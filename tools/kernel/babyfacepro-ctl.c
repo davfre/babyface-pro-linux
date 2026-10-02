@@ -2192,6 +2192,26 @@ static void bf_panel_notify_kctl(struct snd_usb_babyface *chip,
 		snd_ctl_notify(chip->card, SNDRV_CTL_EVENT_MASK_VALUE, &kctl->id);
 }
 
+/* The selection of the IN pair now shown, from panel_sel[]. */
+static void bf_panel_sel_load(struct snd_usb_babyface *chip)
+{
+	int pair = READ_ONCE(chip->panel_in) - 1;
+	int sel = pair >= 0 && pair < 3 ? chip->panel_sel[pair] : -1;
+
+	chip->panel_select_known = sel >= 0;
+	WRITE_ONCE(chip->panel_select, sel >= 0 ? sel : 3);
+}
+
+/* SET and the wheel have nothing to act on while the selection is not
+ * known: say so once, since the cause is not visible from the unit.
+ */
+static void bf_panel_sel_hint(struct snd_usb_babyface *chip)
+{
+	if (!chip->panel_select_known)
+		dev_info_once(&chip->dev->dev,
+			      "front panel: the SELECT channel selection is not known (the unit keeps it, and the driver cannot read it), so SET and the wheel do nothing; press SELECT to see it, then set the \"Front Panel Select\" control to match\n");
+}
+
 /* The kernel driver plays the TotalMix role for the MIX button (the
  * standalone emulator is hardware-validated in tuxmix-core/src/panel.rs
  * + usb.rs): one wheel click in fader mode = +/-0.5 dB on the SELECT-
@@ -2230,6 +2250,8 @@ static void bf_panel_mix_wheel(struct snd_usb_babyface *chip, int delta)
 		n = 1;
 		if (READ_ONCE(chip->panel_select) == 2)
 			targets[n++] = base + 1;
+	} else {
+		bf_panel_sel_hint(chip);
 	}
 
 	mutex_lock(&chip->mutex);
@@ -2568,8 +2590,12 @@ static void bf_panel_gain_wheel(struct snd_usb_babyface *chip, int delta)
 	int n = 0;
 	int i;
 
-	if (READ_ONCE(chip->panel_in) == 3 || READ_ONCE(chip->panel_select) == 3)
+	if (READ_ONCE(chip->panel_in) == 3)
 		return;
+	if (READ_ONCE(chip->panel_select) == 3) {
+		bf_panel_sel_hint(chip);
+		return;
+	}
 	{
 		int base = READ_ONCE(chip->panel_in) == 2 ? 2 : 0;
 
@@ -2655,9 +2681,12 @@ static void bf_panel_set_phantom(struct snd_usb_babyface *chip)
 	u16 old;
 	int m;
 
-	if (READ_ONCE(chip->panel_mix) || READ_ONCE(chip->panel_in) != 1 ||
-	    READ_ONCE(chip->panel_select) == 3)
+	if (READ_ONCE(chip->panel_mix) || READ_ONCE(chip->panel_in) != 1)
 		return;
+	if (READ_ONCE(chip->panel_select) == 3) {
+		bf_panel_sel_hint(chip);
+		return;
+	}
 	if (READ_ONCE(chip->panel_select) != 1)
 		bits |= BF_PREAMP_48V_MIC1;
 	if (READ_ONCE(chip->panel_select) != 0)
@@ -2722,6 +2751,10 @@ static void bf_panel_tick(struct snd_usb_babyface *chip)
 		in = bf_panel_in_decode((st[2] >> BF_PANEL_IN_SHIFT) & 0x7);
 		if (in)
 			WRITE_ONCE(chip->panel_in, in);
+		/* The IN pair is only known from here on: pick up its
+		 * selection (kept across a re-probe).
+		 */
+		bf_panel_sel_load(chip);
 		out = bf_panel_out_decode(st[1] & 0x07);
 		if (out)
 			WRITE_ONCE(chip->panel_out, out);
@@ -2729,17 +2762,6 @@ static void bf_panel_tick(struct snd_usb_babyface *chip)
 		WRITE_ONCE(chip->panel_saw_fader, (st[2] >> 4) == 0x0);
 		WRITE_ONCE(chip->panel_dim, !!(st[1] & 0x20));
 		return;
-	}
-
-	/* The udev alsactl restore (~100 ms after probe) clobbers the host
-	 * SELECT with a stale stored value (the control is VOLATILE but
-	 * this alsactl stores/restores it anyway) - re-assert the device's
-	 * power-on state (nothing selected, cycle ARMED) for the first
-	 * ~3 s so the boot always starts in sync.
-	 */
-	if (time_is_after_jiffies(chip->panel_start + 3 * HZ)) {
-		WRITE_ONCE(chip->panel_select, 3);
-		chip->panel_select_known = false;
 	}
 
 	/* Button flash (byte3 over the 0x40 idle base).  Notify on the
@@ -2796,25 +2818,23 @@ static void bf_panel_tick(struct snd_usb_babyface *chip)
 	 */
 	in = bf_panel_in_decode((st[2] >> BF_PANEL_IN_SHIFT) & 0x7);
 	if (in && in != READ_ONCE(chip->panel_in)) {
+		int sel = READ_ONCE(chip->panel_select);
+
 		WRITE_ONCE(chip->panel_in, in);
-		/* The card CLEARS its L/R/both selection on an IN pair
-		 * switch (user-verified 2026-08-27): re-sync the host-
-		 * tracked SELECT so SET / the wheel / MIX target nothing
-		 * until the user picks a channel again.  This is the main
-		 * anti-desync hook (the physical state is not readable).
+		/* The unit keeps one SELECT selection per IN pair, and an
+		 * IN switch does not clear it (hardware-verified
+		 * 2026-10-02: back on Ch 1/2 after a trip through Ch 3/4,
+		 * the first SELECT press showed the L it had left, while
+		 * Ch 3/4 showed nothing).  Switch to the new pair's.
 		 */
-		if (READ_ONCE(chip->panel_select) != 3) {
-			WRITE_ONCE(chip->panel_select, 3);
+		bf_panel_sel_load(chip);
+		if (sel != READ_ONCE(chip->panel_select))
 			bf_panel_notify(chip, BF_PANEL_KCTL_SELECT);
-		}
-		/* An IN-pair switch disarms the device's SELECT cycle: the
-		 * next press only re-arms it (no step), the one after that
-		 * cycles (device behavior, user-verified 2026-08-28).
-		 * It is also the anchor that makes an unknown selection
-		 * known: the device starts from nothing selected here.
+		/* The LEDs go dark on an IN switch: the next SELECT press
+		 * only shows the selection again (no step), the one after
+		 * that steps it (user-verified 2026-08-28).
 		 */
 		chip->panel_select_armed = false;
-		chip->panel_select_known = true;
 		bf_panel_notify(chip, BF_PANEL_KCTL_IN);
 	}
 	out = bf_panel_out_decode(st[1] & 0x07);
@@ -2832,12 +2852,15 @@ static void bf_panel_tick(struct snd_usb_babyface *chip)
 	    chip->panel_select_known) {
 		if (!chip->panel_select_armed) {
 			/* Disarmed (IN switch since the last step): the press
-			 * only re-arms the cycle - the device steps on the
-			 * NEXT press (user-verified 2026-08-28).
+			 * only shows the selection - the device steps it on
+			 * the NEXT press (user-verified 2026-08-28).
 			 */
 			chip->panel_select_armed = true;
 		} else {
-			WRITE_ONCE(chip->panel_select, (READ_ONCE(chip->panel_select) + 1) & 3);
+			int sel = (READ_ONCE(chip->panel_select) + 1) & 3;
+
+			WRITE_ONCE(chip->panel_select, sel);
+			chip->panel_sel[READ_ONCE(chip->panel_in) - 1] = sel;
 		}
 		bf_panel_notify(chip, BF_PANEL_KCTL_SELECT);
 	}
@@ -2971,19 +2994,18 @@ void babyface_panel_start(struct snd_usb_babyface *chip)
 {
 	chip->panel_seen = false;
 	/* The SELECT channel selection is not in the readback, so the
-	 * driver follows it from the presses.  The device keeps it across
-	 * a driver reload and even a power cycle, with the LEDs dark until
-	 * the next SELECT press, which shows it again instead of stepping
-	 * (hardware-verified 2026-09-29: after an unplug, the first press
-	 * lit both channels).  Nothing tells the driver what that press
-	 * showed, so the selection starts unknown and targets nothing -
-	 * SET, the IN wheel and the MIX wheel then do nothing rather than
-	 * act on the wrong channel.  An IN pair switch, which the device
-	 * resets to nothing selected, makes it known again.
+	 * driver follows it from the presses.  The unit keeps one per IN
+	 * pair across a driver reload and even a power cycle, with the LEDs
+	 * dark until the next SELECT press, which shows it again instead of
+	 * stepping (hardware-verified 2026-09-29: after an unplug, the
+	 * first press lit both channels).  What panel_sel[] holds comes
+	 * from before (a re-probe keeps it, see bf_saved) or is not known,
+	 * and an unknown selection targets nothing: SET, the IN wheel and
+	 * the MIX wheel then do nothing rather than act on the wrong
+	 * channel, until "Front Panel Select" is set to what the LEDs show.
 	 */
-	WRITE_ONCE(chip->panel_select, 3);	/* none */
+	bf_panel_sel_load(chip);
 	chip->panel_select_armed = false;
-	chip->panel_select_known = false;
 	chip->panel_start = jiffies;
 	chip->panel_fast_until = jiffies;
 	chip->panel_poll_t = 0;
@@ -3093,24 +3115,34 @@ static int bf_panel_select_get(struct snd_kcontrol *kctl,
 
 /* Writable so software (or the user, after a driver reload) can
  * re-sync the host-tracked SELECT state to the physical card - the
- * L/R/both/none state is NOT in the 0x17 readback, so a reload starts
- * at "Left" while the card may sit at any position; a desync makes
- * SET / the wheel / MIX target the wrong channel.  Writing the
- * physical state re-aligns the emulation (TotalMix parity: it also
- * lets software select channels directly).
+ * L/R/both/none state is NOT in the 0x17 readback, and the unit keeps
+ * one per IN pair across reloads and power cycles, so the driver cannot
+ * know it after a load.  Writing what the LEDs show for the pair now
+ * selected tells it (TotalMix parity: it also lets software select
+ * channels directly).
  */
 static int bf_panel_select_put(struct snd_kcontrol *kctl,
 			       struct snd_ctl_elem_value *ucontrol)
 {
 	struct snd_usb_babyface *chip = snd_kcontrol_chip(kctl);
 	unsigned int v = ucontrol->value.enumerated.item[0];
+	int pair = READ_ONCE(chip->panel_in) - 1;
 	int ret = 0;
 
 	if (v > 3)
 		return -EINVAL;
-	/* A mixer application setting the selection asserts what the
-	 * device shows.
+	/* The udev alsactl restore (~100 ms after probe) writes the value
+	 * stored at the last shutdown, which says nothing about the unit now
+	 * (the control is VOLATILE but alsactl stores it anyway).
 	 */
+	if (time_is_after_jiffies(chip->panel_start + 3 * HZ))
+		return 0;
+	if (pair < 0 || pair > 2)
+		return -EAGAIN;	/* the IN pair is not known yet */
+	/* A mixer application setting the selection asserts what the unit
+	 * shows for the pair, which is displayed - the next press steps.
+	 */
+	chip->panel_sel[pair] = v;
 	chip->panel_select_known = true;
 	chip->panel_select_armed = true;
 	if (v != READ_ONCE(chip->panel_select)) {

@@ -432,9 +432,14 @@ struct snd_usb_babyface {
 	unsigned int panel_poll_ms;	/* front-panel poll interval, module param */
 	u8 panel_prev[4];		/* last 0x17 snapshot */
 	bool panel_seen;		/* first snapshot taken */
-	bool panel_select_armed;	/* device SELECT cycle armed (IN switch disarms) */
-	bool panel_select_known;	/* panel_select matches the device (see
-					 * babyface_panel_start())
+	bool panel_select_armed;	/* the LEDs show the selection: the next SELECT
+					 * press steps it (an IN switch clears this)
+					 */
+	bool panel_select_known;	/* panel_select matches the unit */
+	s8 panel_sel[3];		/* the SELECT selection of each IN pair (Ch 1/2,
+					 * Ch 3/4, Opt): -1 not known, else as
+					 * panel_select.  The unit keeps one per pair,
+					 * across IN switches and power cycles.
 					 */
 	unsigned long panel_start;	/* jiffies at panel_start (boot re-assert) */
 	int panel_button;		/* latched button event (consumed on get) */
@@ -449,8 +454,9 @@ struct snd_usb_babyface {
 	bool panel_saw_fader;		/* device observed in fader mode (byte2 0x0x)
 					 * - gates the device-driven MIX exit
 					 */
-	int panel_select;		/* SELECT state: 0 L, 1 R, 2 both, 3 none
-					 * (host-tracked - not in the readback)
+	int panel_select;		/* SELECT state of the IN pair shown: 0 L, 1 R,
+					 * 2 both, 3 none (3 too when not known);
+					 * host-tracked, not in the readback
 					 */
 	int panel_sel_hold;		/* consecutive ticks with byte3 = 0x50
 					 * (SELECT held > 200 ms = the OUT-balance
@@ -504,6 +510,7 @@ struct bf_saved {
 	u16 fx_send;
 	bool dim;
 	struct bf_eq_channel eq[4];
+	s8 panel_sel[3];
 };
 
 struct bf_rate {
