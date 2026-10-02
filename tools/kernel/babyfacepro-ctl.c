@@ -2737,8 +2737,10 @@ static void bf_panel_tick(struct snd_usb_babyface *chip)
 	 * power-on state (nothing selected, cycle ARMED) for the first
 	 * ~3 s so the boot always starts in sync.
 	 */
-	if (time_is_after_jiffies(chip->panel_start + 3 * HZ))
+	if (time_is_after_jiffies(chip->panel_start + 3 * HZ)) {
 		WRITE_ONCE(chip->panel_select, 3);
+		chip->panel_select_known = false;
+	}
 
 	/* Button flash (byte3 over the 0x40 idle base).  Notify on the
 	 * edge, as the other flash-driven controls do, so a subscriber sees
@@ -2808,8 +2810,11 @@ static void bf_panel_tick(struct snd_usb_babyface *chip)
 		/* An IN-pair switch disarms the device's SELECT cycle: the
 		 * next press only re-arms it (no step), the one after that
 		 * cycles (device behavior, user-verified 2026-08-28).
+		 * It is also the anchor that makes an unknown selection
+		 * known: the device starts from nothing selected here.
 		 */
 		chip->panel_select_armed = false;
+		chip->panel_select_known = true;
 		bf_panel_notify(chip, BF_PANEL_KCTL_IN);
 	}
 	out = bf_panel_out_decode(st[1] & 0x07);
@@ -2823,7 +2828,8 @@ static void bf_panel_tick(struct snd_usb_babyface *chip)
 	 * (panelprobe 2026-08-24), so it is tracked host-side.
 	 */
 	if (st[3] == BF_PANEL_FLASH_SELECT &&
-	    chip->panel_prev[3] != BF_PANEL_FLASH_SELECT) {
+	    chip->panel_prev[3] != BF_PANEL_FLASH_SELECT &&
+	    chip->panel_select_known) {
 		if (!chip->panel_select_armed) {
 			/* Disarmed (IN switch since the last step): the press
 			 * only re-arms the cycle - the device steps on the
@@ -2964,14 +2970,20 @@ void babyface_panel_work(struct work_struct *work)
 void babyface_panel_start(struct snd_usb_babyface *chip)
 {
 	chip->panel_seen = false;
-	/* The device boots with NOTHING selected (the SELECT cycle starts
-	 * at none -> AN1 -> AN2 -> both -> none) - the unreadable selection
-	 * must start there too, or every later SET is off by one channel
-	 * (host at AN1 while the LEDs show nothing -> first SELECT makes
-	 * the device blink AN1 but the host believes AN2).
+	/* The SELECT channel selection is not in the readback, so the
+	 * driver follows it from the presses.  The device keeps it across
+	 * a driver reload and even a power cycle, with the LEDs dark until
+	 * the next SELECT press, which shows it again instead of stepping
+	 * (hardware-verified 2026-09-29: after an unplug, the first press
+	 * lit both channels).  Nothing tells the driver what that press
+	 * showed, so the selection starts unknown and targets nothing -
+	 * SET, the IN wheel and the MIX wheel then do nothing rather than
+	 * act on the wrong channel.  An IN pair switch, which the device
+	 * resets to nothing selected, makes it known again.
 	 */
 	WRITE_ONCE(chip->panel_select, 3);	/* none */
-	chip->panel_select_armed = true;
+	chip->panel_select_armed = false;
+	chip->panel_select_known = false;
 	chip->panel_start = jiffies;
 	chip->panel_fast_until = jiffies;
 	chip->panel_poll_t = 0;
@@ -3096,6 +3108,11 @@ static int bf_panel_select_put(struct snd_kcontrol *kctl,
 
 	if (v > 3)
 		return -EINVAL;
+	/* A mixer application setting the selection asserts what the
+	 * device shows.
+	 */
+	chip->panel_select_known = true;
+	chip->panel_select_armed = true;
 	if (v != READ_ONCE(chip->panel_select)) {
 		WRITE_ONCE(chip->panel_select, v);
 		bf_panel_notify(chip, BF_PANEL_KCTL_SELECT);

@@ -433,6 +433,9 @@ struct snd_usb_babyface {
 	u8 panel_prev[4];		/* last 0x17 snapshot */
 	bool panel_seen;		/* first snapshot taken */
 	bool panel_select_armed;	/* device SELECT cycle armed (IN switch disarms) */
+	bool panel_select_known;	/* panel_select matches the device (see
+					 * babyface_panel_start())
+					 */
 	unsigned long panel_start;	/* jiffies at panel_start (boot re-assert) */
 	int panel_button;		/* latched button event (consumed on get) */
 	int panel_wheel;		/* accumulated wheel delta (consumed on get) */
