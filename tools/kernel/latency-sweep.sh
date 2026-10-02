@@ -19,7 +19,7 @@ RATE=48000
 SRC="$(dirname "$0")/looplat.c"
 BIN="${TMPDIR:-/tmp}/looplat"
 
-[ -x "$BIN" ] || gcc -O2 -o "$BIN" "$SRC" -lasound || exit 1
+[ -x "$BIN" ] || gcc -O2 -o "$BIN" "$SRC" -lasound -lpthread || exit 1
 
 PERIODS_2CH="16 32 64 128 256 512 1024 2048 4096 8192"
 PERIODS_12CH="16 32 64 128 256 512 1024 2048 4096 8192"
