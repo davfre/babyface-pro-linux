@@ -162,12 +162,17 @@ the device's own internal state machine, which the driver cannot
 read.  The unit keeps one such selection for each IN pair, across IN
 switches and even across a power cycle; its LEDs stay dark until the
 next SELECT press, which only shows the selection again, and later
-presses step it.  The driver follows the presses, but after a load it
-cannot know what the unit holds, so it starts without a selection:
-SET and the wheel then do nothing instead of acting on a channel that
-may not be the lit one, until the "Front Panel Select" control is set
-to what the LEDs show.  A re-probe, which does not change the unit,
-keeps what the driver had.  The value alsactl restores shortly after
-probe says nothing about the unit and is ignored.  The relevant code
+presses step it.  The driver follows the presses and exposes the
+selection of each pair as a "Front Panel Selection" control (index 0
+is Ch 1/2), so that alsactl keeps it across boots like any other
+mixer setting.  It cannot know what the unit holds before it has been
+told once, so a pair starts out unknown, and SET and the wheel then do
+nothing instead of acting on a channel that may not be the lit one;
+setting the control to what the LEDs show for the pair tells it.  A
+re-probe, which does not change the unit, keeps what the driver had,
+and the older values alsactl restores shortly after probe are ignored
+for a pair the driver already knows.  The stored values can be wrong
+only if the selection was changed while the driver was not running
+(the unit used on its own, or with another host).  The relevant code
 comments (``babyface_panel_start()``, the ``panel_select_armed``
 handling in ``bf_panel_tick()``) explain the details.

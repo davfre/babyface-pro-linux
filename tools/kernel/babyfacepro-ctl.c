@@ -2010,7 +2010,6 @@ enum {
 	BF_PANEL_KCTL_OUT,
 	BF_PANEL_KCTL_MIX,
 	BF_PANEL_KCTL_DIM,
-	BF_PANEL_KCTL_SELECT,
 	BF_PANEL_KCTL_NUM,
 };
 
@@ -2023,7 +2022,7 @@ static const char *const bf_panel_out_texts[] = {
 };
 
 static const char *const bf_panel_select_texts[] = {
-	"Left", "Right", "Both", "None", NULL
+	"Left", "Right", "Both", "None", "Unknown", NULL
 };
 
 /* byte3 button flash -> event code (0 = none).  The idle byte3 is 0x40;
@@ -2209,7 +2208,7 @@ static void bf_panel_sel_hint(struct snd_usb_babyface *chip)
 {
 	if (!chip->panel_select_known)
 		dev_info_once(&chip->dev->dev,
-			      "front panel: the SELECT channel selection is not known (the unit keeps it, and the driver cannot read it), so SET and the wheel do nothing; press SELECT to see it, then set the \"Front Panel Select\" control to match\n");
+			      "front panel: the SELECT channel selection is not known (the unit keeps it, and the driver cannot read it), so SET and the wheel do nothing; press SELECT to see it, then set the \"Front Panel Selection\" control of the IN pair shown (index 0 = Ch 1/2) to match\n");
 }
 
 /* The kernel driver plays the TotalMix role for the MIX button (the
@@ -2818,8 +2817,6 @@ static void bf_panel_tick(struct snd_usb_babyface *chip)
 	 */
 	in = bf_panel_in_decode((st[2] >> BF_PANEL_IN_SHIFT) & 0x7);
 	if (in && in != READ_ONCE(chip->panel_in)) {
-		int sel = READ_ONCE(chip->panel_select);
-
 		WRITE_ONCE(chip->panel_in, in);
 		/* The unit keeps one SELECT selection per IN pair, and an
 		 * IN switch does not clear it (hardware-verified
@@ -2828,8 +2825,6 @@ static void bf_panel_tick(struct snd_usb_babyface *chip)
 		 * Ch 3/4 showed nothing).  Switch to the new pair's.
 		 */
 		bf_panel_sel_load(chip);
-		if (sel != READ_ONCE(chip->panel_select))
-			bf_panel_notify(chip, BF_PANEL_KCTL_SELECT);
 		/* The LEDs go dark on an IN switch: the next SELECT press
 		 * only shows the selection again (no step), the one after
 		 * that steps it (user-verified 2026-08-28).
@@ -2858,11 +2853,15 @@ static void bf_panel_tick(struct snd_usb_babyface *chip)
 			chip->panel_select_armed = true;
 		} else {
 			int sel = (READ_ONCE(chip->panel_select) + 1) & 3;
+			struct snd_kcontrol *kctl =
+				chip->panel_select_kctl[READ_ONCE(chip->panel_in) - 1];
 
 			WRITE_ONCE(chip->panel_select, sel);
 			chip->panel_sel[READ_ONCE(chip->panel_in) - 1] = sel;
+			if (kctl)
+				snd_ctl_notify(chip->card, SNDRV_CTL_EVENT_MASK_VALUE,
+					       &kctl->id);
 		}
-		bf_panel_notify(chip, BF_PANEL_KCTL_SELECT);
 	}
 	/* SELECT hold (the OUT-balance gesture, manual sec. 5.1 "Output
 	 * Balance"): a tap flashes byte3 0x50 for ~2-3 frames at 20 Hz
@@ -3101,7 +3100,7 @@ static int bf_panel_out_get(struct snd_kcontrol *kctl,
 static int bf_panel_select_info(struct snd_kcontrol *kctl,
 				struct snd_ctl_elem_info *uinfo)
 {
-	return snd_ctl_enum_info(uinfo, 1, 4, bf_panel_select_texts);
+	return snd_ctl_enum_info(uinfo, 1, 5, bf_panel_select_texts);
 }
 
 static int bf_panel_select_get(struct snd_kcontrol *kctl,
@@ -3109,7 +3108,9 @@ static int bf_panel_select_get(struct snd_kcontrol *kctl,
 {
 	struct snd_usb_babyface *chip = snd_kcontrol_chip(kctl);
 
-	ucontrol->value.enumerated.item[0] = READ_ONCE(chip->panel_select);
+	s8 sel = READ_ONCE(chip->panel_sel[kctl->private_value]);
+
+	ucontrol->value.enumerated.item[0] = sel >= 0 ? sel : 4;
 	return 0;
 }
 
@@ -3126,31 +3127,32 @@ static int bf_panel_select_put(struct snd_kcontrol *kctl,
 {
 	struct snd_usb_babyface *chip = snd_kcontrol_chip(kctl);
 	unsigned int v = ucontrol->value.enumerated.item[0];
-	int pair = READ_ONCE(chip->panel_in) - 1;
-	int ret = 0;
+	int pair = kctl->private_value;
+	/* alsactl restores the values stored at the last shutdown shortly
+	 * after every probe.
+	 */
+	bool restore = time_is_after_jiffies(chip->panel_start + 3 * HZ);
+	s8 sel = v < 4 ? v : -1;
 
-	if (v > 3)
+	if (v > 4)
 		return -EINVAL;
-	/* The udev alsactl restore (~100 ms after probe) writes the value
-	 * stored at the last shutdown, which says nothing about the unit now
-	 * (the control is VOLATILE but alsactl stores it anyway).
+	/* After a boot nothing is known and the stored values are what there
+	 * is; after a re-probe the driver kept what it tracked, which is
+	 * newer than anything stored.
 	 */
-	if (time_is_after_jiffies(chip->panel_start + 3 * HZ))
+	if (restore && chip->panel_sel[pair] >= 0)
 		return 0;
-	if (pair < 0 || pair > 2)
-		return -EAGAIN;	/* the IN pair is not known yet */
-	/* A mixer application setting the selection asserts what the unit
-	 * shows for the pair, which is displayed - the next press steps.
-	 */
-	chip->panel_sel[pair] = v;
-	chip->panel_select_known = true;
-	chip->panel_select_armed = true;
-	if (v != READ_ONCE(chip->panel_select)) {
-		WRITE_ONCE(chip->panel_select, v);
-		bf_panel_notify(chip, BF_PANEL_KCTL_SELECT);
-		ret = 1;
-	}
-	return ret;
+	if (pair == READ_ONCE(chip->panel_in) - 1 && !restore && sel >= 0)
+		/* Set while the LEDs show the selection: the next press steps
+		 * it.
+		 */
+		chip->panel_select_armed = true;
+	if (sel == chip->panel_sel[pair])
+		return 0;
+	chip->panel_sel[pair] = sel;
+	if (pair == READ_ONCE(chip->panel_in) - 1)
+		bf_panel_sel_load(chip);
+	return 1;
 }
 
 /* Shared boolean get - private_value selects mix (0) / dim (1). */
@@ -3167,7 +3169,7 @@ static int bf_panel_bool_get(struct snd_kcontrol *kctl,
 int babyface_create_panel(struct snd_usb_babyface *chip)
 {
 	struct snd_kcontrol *kctl;
-	int err;
+	int err, pair;
 
 	memset(chip->panel_kctl, 0, sizeof(chip->panel_kctl));
 
@@ -3250,20 +3252,27 @@ int babyface_create_panel(struct snd_usb_babyface *chip)
 		return err;
 	chip->panel_kctl[BF_PANEL_KCTL_DIM] = kctl;
 
-	kctl = snd_ctl_new1(&(struct snd_kcontrol_new){
-		.iface = SNDRV_CTL_ELEM_IFACE_MIXER,
-		.name = "Front Panel Select",
-		.access = SNDRV_CTL_ELEM_ACCESS_READ |
-			  SNDRV_CTL_ELEM_ACCESS_WRITE |
-			  SNDRV_CTL_ELEM_ACCESS_VOLATILE,
-		.info = bf_panel_select_info,
-		.get = bf_panel_select_get,
-		.put = bf_panel_select_put,
-	}, chip);
-	err = snd_ctl_add(chip->card, kctl);
-	if (err < 0)
-		return err;
-	chip->panel_kctl[BF_PANEL_KCTL_SELECT] = kctl;
+	/* One per IN pair (index 0 = Ch 1/2, 1 = Ch 3/4, 2 = Opt): the
+	 * unit keeps one selection per pair, and a plain control, not a
+	 * volatile one, is what alsactl keeps across boots.  Named apart from
+	 * the single volatile "Front Panel Select" this replaces, whose stored
+	 * value alsactl must not apply.
+	 */
+	for (pair = 0; pair < 3; pair++) {
+		kctl = snd_ctl_new1(&(struct snd_kcontrol_new){
+			.iface = SNDRV_CTL_ELEM_IFACE_MIXER,
+			.name = "Front Panel Selection",
+			.index = pair,
+			.info = bf_panel_select_info,
+			.get = bf_panel_select_get,
+			.put = bf_panel_select_put,
+			.private_value = pair,
+		}, chip);
+		err = snd_ctl_add(chip->card, kctl);
+		if (err < 0)
+			return err;
+		chip->panel_select_kctl[pair] = kctl;
+	}
 
 	return 0;
 }

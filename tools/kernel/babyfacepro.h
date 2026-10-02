@@ -439,7 +439,9 @@ struct snd_usb_babyface {
 	s8 panel_sel[3];		/* the SELECT selection of each IN pair (Ch 1/2,
 					 * Ch 3/4, Opt): -1 not known, else as
 					 * panel_select.  The unit keeps one per pair,
-					 * across IN switches and power cycles.
+					 * across IN switches and power cycles; the
+					 * "Front Panel Select" controls expose them
+					 * so that alsactl can keep them across boots.
 					 */
 	unsigned long panel_start;	/* jiffies at panel_start (boot re-assert) */
 	int panel_button;		/* latched button event (consumed on get) */
@@ -482,7 +484,8 @@ struct snd_usb_babyface {
 					 * (0x1A 0x000A+mic - written on change
 					 * so the input VU follows the wheel)
 					 */
-	struct snd_kcontrol *panel_kctl[7]; /* for snd_ctl_notify */
+	struct snd_kcontrol *panel_kctl[6]; /* for snd_ctl_notify */
+	struct snd_kcontrol *panel_select_kctl[3]; /* per IN pair, likewise */
 	struct snd_kcontrol *trim_kctl[4];  /* for snd_ctl_notify */
 	struct snd_kcontrol *dim_kctl;      /* for snd_ctl_notify */
 };
