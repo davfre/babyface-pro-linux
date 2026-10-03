@@ -1565,9 +1565,27 @@ static int babyface_pcm_trigger(struct snd_pcm_substream *subs, int cmd)
  * snd-usb-audio estimates it from the USB frame counter, which counts
  * in 1 ms steps, longer than a 32-frame URB at 48 kHz.  With one time
  * reference the estimate cancels in the sum of the two delays, the
- * round trip an application compensates a recording with.  Caller
- * holds chip->lock.
+ * round trip an application compensates a recording with.
+ *
+ * On top of that queue each direction adds a fixed delay inside the
+ * device, per speed, in frames at the stream rate.  The values are what
+ * RME's Windows driver reports for its ASIO buffer on a 2015 Babyface
+ * Pro, which RTL Utility measured to within one frame.  Playback is
+ * 8 + 32 x the speed: the device's OUT buffer and the DA converter,
+ * the same on the FS.  Capture is lowered by 7 frames to the FS, whose
+ * AD converter is 5 samples against 12 on the 2015 model, since the
+ * two share VID:PID and bcdDevice.  So the 2015 model is reported a
+ * little short, and neither model too long.  Caller holds chip->lock.
  */
+static const struct {
+	u8 playback;
+	u8 capture;
+} bf_device_delay[] = {
+	[BF_ALT_1] = { 40, 16 },
+	[BF_ALT_2] = { 72, 24 },
+	[BF_ALT_3] = { 136, 38 },
+};
+
 static snd_pcm_uframes_t bf_delay(struct snd_usb_babyface *chip,
 				  struct snd_pcm_substream *subs)
 {
@@ -1578,10 +1596,11 @@ static snd_pcm_uframes_t bf_delay(struct snd_usb_babyface *chip,
 	moved = ns > 0 ? min_t(u64, div_u64((u64)ns * subs->runtime->rate,
 					    NSEC_PER_SEC), urb) : 0;
 	if (subs->stream == SNDRV_PCM_STREAM_CAPTURE)
-		return moved;
+		return moved + bf_device_delay[chip->alt].capture;
 	if (chip->out_inflight < 2)
 		return 0;
-	return (chip->out_inflight - 1) * urb - moved;
+	return (chip->out_inflight - 1) * urb - moved +
+	       bf_device_delay[chip->alt].playback;
 }
 
 static snd_pcm_uframes_t babyface_pcm_pointer(struct snd_pcm_substream *subs)
