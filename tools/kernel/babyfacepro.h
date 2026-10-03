@@ -381,8 +381,9 @@ struct snd_usb_babyface {
 	u32 dim_press_count;		/* front-panel DIM presses, wraps */
 	u16 master[6][2];		/* cached 16-bit masters */
 	bool muted[6];
-	u16 dim_saved[2];		/* pre-DIM Phones master (out 1 L/R) */
-	bool dim;			/* DIM engaged (fixed -20 dB on Phones) */
+	u16 dim_saved[2];		/* Main Out level DIM off restores */
+	bool dim;			/* DIM engaged: Main Out 20 dB down */
+	bool dim_report_only;		/* a DIM press is only reported */
 	u16 xpoint[6][14][2];		/* cached crosspoints (out, src, L/R) */
 	/* The controls the front panel changes on its own (the MIX wheel,
 	 * the IN wheel, SET), for snd_ctl_notify.
@@ -512,6 +513,8 @@ struct bf_saved {
 	int width;
 	u16 fx_send;
 	bool dim;
+	u16 dim_saved[2];
+	bool dim_report_only;
 	struct bf_eq_channel eq[4];
 	s8 panel_sel[3];
 };

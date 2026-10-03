@@ -452,35 +452,12 @@ int bf_state_apply_flags(struct snd_usb_babyface *chip)
 			return ret;
 	}
 
-	/* Re-apply an engaged DIM (the fixed -20 dB Phones pair + flag).  The
-	 * level DIM releases back to is not persisted: it always tracks the
-	 * Phones master while DIM is engaged, so rebuild it here - otherwise a
-	 * DIM released after a re-probe or resume would drive Phones to
-	 * silence (dim_saved still zero on the fresh chip).
+	/* Re-apply an engaged DIM.  While DIM is on the master cache holds
+	 * the dimmed Main Out level, which the master restore above has
+	 * already written, so only the DIM LED flag is left.  dim_saved, the
+	 * level DIM off returns to, came back with the saved state.
 	 */
 	if (chip->dim) {
-		chip->dim_saved[0] = chip->master[1][0];
-		chip->dim_saved[1] = chip->master[1][1];
-		ret = bf_vendor_write(chip, BF_REQ_GAIN, 0xcb,
-				      BF_REG_MASTER_8 + 2 * 1);
-		if (ret < 0)
-			return ret;
-		ret = bf_vendor_write(chip, BF_REQ_GAIN, 0xcb,
-				      BF_REG_MASTER_8 + 2 * 1 + 1);
-		if (ret < 0)
-			return ret;
-		ret = bf_vendor_write(chip, BF_REQ_CROSSPOINT, 0x0333,
-				      (BF_REG_MASTER_16 + 2 * 1) |
-				      bf_flag_cycle[chip->flag_cnt]);
-		if (ret < 0)
-			return ret;
-		chip->flag_cnt = (chip->flag_cnt + 1) & 3;
-		ret = bf_vendor_write(chip, BF_REQ_CROSSPOINT, 0x0333,
-				      (BF_REG_MASTER_16 + 2 * 1 + 1) |
-				      bf_flag_cycle[chip->flag_cnt]);
-		if (ret < 0)
-			return ret;
-		chip->flag_cnt = (chip->flag_cnt + 1) & 3;
 		ret = bf_vendor_write(chip, BF_REQ_PREAMP, 0x2000, 0x2000);
 		if (ret < 0)
 			return ret;
@@ -582,6 +559,8 @@ void bf_state_save(struct snd_usb_babyface *chip)
 	s->width = chip->width;
 	s->fx_send = chip->fx_send;
 	s->dim = chip->dim;
+	memcpy(s->dim_saved, chip->dim_saved, sizeof(s->dim_saved));
+	s->dim_report_only = chip->dim_report_only;
 	memcpy(s->eq, chip->eq, sizeof(s->eq));
 	memcpy(s->panel_sel, chip->panel_sel, sizeof(s->panel_sel));
 	mutex_unlock(&bf_saved_mutex);
@@ -621,6 +600,8 @@ int bf_state_restore(struct snd_usb_babyface *chip)
 		chip->width = s->width;
 		chip->fx_send = s->fx_send;
 		chip->dim = s->dim;
+		memcpy(chip->dim_saved, s->dim_saved, sizeof(chip->dim_saved));
+		chip->dim_report_only = s->dim_report_only;
 		memcpy(chip->eq, s->eq, sizeof(chip->eq));
 		memcpy(chip->panel_sel, s->panel_sel, sizeof(chip->panel_sel));
 		ret = 1;

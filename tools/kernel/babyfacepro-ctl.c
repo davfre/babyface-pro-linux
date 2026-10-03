@@ -374,11 +374,6 @@ static int bf_master_put(struct snd_kcontrol *kctl,
 
 	chip->master[out][0] = l;
 	chip->master[out][1] = r;
-	/* A Phones change while DIM is engaged re-bases the restore point. */
-	if (chip->dim && out == 1) {
-		chip->dim_saved[0] = l;
-		chip->dim_saved[1] = r;
-	}
 	ret = 1;
 out:
 	mutex_unlock(&chip->mutex);
@@ -1311,11 +1306,19 @@ out:
 	return ret;
 }
 
-/* DIM - cap_dim2.pcap: an absolute -20 dB on the Phones master
- * (out 1: 8-bit 0xCB / 16-bit 0x0333) regardless of the current level,
- * plus the 0x17 wVal=0x2000 wIdx=0x2000 flag; release restores the
- * pre-DIM master host-side.  The master cache keeps the real volume.
+/* DIM, as TotalMix does it by default ("DIM Main Out", Windows USB
+ * captures of 2026-10-03): the Main Out (AN1/2) 20 dB down from its
+ * current level.  The 16-bit master is divided by 10, its 8-bit companion
+ * follows (40 half-dB steps), and 0x17 wVal=0x2000 wIdx=0x2000 lights the
+ * DIM LEDs.  While DIM is on, the master cache holds the dimmed level, so
+ * the volume control reads what the output plays, and the wheel or a
+ * mixer moves the dimmed level only.  DIM off restores the level saved
+ * at DIM on, never the dimmed level plus 20 dB: a level nudged up while
+ * dimmed must not come back 20 dB louder.  A muted output stays muted on
+ * the wire, and unmutes to the cached level.
  */
+#define BF_DIM_OUT	0
+
 static int bf_dim_get(struct snd_kcontrol *kctl,
 		      struct snd_ctl_elem_value *ucontrol)
 {
@@ -1331,63 +1334,48 @@ static int bf_dim_get(struct snd_kcontrol *kctl,
  */
 static int bf_dim_apply(struct snd_usb_babyface *chip, bool on)
 {
-	u16 flag;
+	const int out = BF_DIM_OUT;
+	u16 l, r, flag;
 	int ret;
 
 	lockdep_assert_held(&chip->mutex);
 	if (on) {
-		chip->dim_saved[0] = chip->master[1][0];
-		chip->dim_saved[1] = chip->master[1][1];
-		ret = bf_vendor_write(chip, BF_REQ_GAIN, BF_MASTER_MINUS20_8,
-				      BF_REG_MASTER_8 + 2 * 1);
-		if (ret < 0)
-			return ret;
-		ret = bf_vendor_write(chip, BF_REQ_GAIN, BF_MASTER_MINUS20_8,
-				      BF_REG_MASTER_8 + 2 * 1 + 1);
-		if (ret < 0)
-			return ret;
-		flag = bf_flag_cycle[chip->flag_cnt];
-		chip->flag_cnt = (chip->flag_cnt + 1) & 3;
-		ret = bf_vendor_write(chip, BF_REQ_CROSSPOINT,
-				      BF_MASTER_MINUS20_16,
-				      (BF_REG_MASTER_16 + 2 * 1) | flag);
-		if (ret < 0)
-			return ret;
-		ret = bf_vendor_write(chip, BF_REQ_CROSSPOINT,
-				      BF_MASTER_MINUS20_16,
-				      (BF_REG_MASTER_16 + 2 * 1 + 1) | flag);
-		if (ret < 0)
-			return ret;
-		ret = bf_vendor_write(chip, BF_REQ_PREAMP, 0x2000, 0x2000);
-		if (ret < 0)
-			return ret;
+		l = DIV_ROUND_CLOSEST(chip->master[out][0], 10);
+		r = DIV_ROUND_CLOSEST(chip->master[out][1], 10);
 	} else {
-		ret = bf_vendor_write(chip, BF_REQ_GAIN,
-				      bf_master_8bit(chip->dim_saved[0]),
-				      BF_REG_MASTER_8 + 2 * 1);
+		l = chip->dim_saved[0];
+		r = chip->dim_saved[1];
+	}
+	if (!chip->muted[out]) {
+		ret = bf_vendor_write(chip, BF_REQ_GAIN, bf_master_8bit(l),
+				      BF_REG_MASTER_8 + 2 * out);
 		if (ret < 0)
 			return ret;
-		ret = bf_vendor_write(chip, BF_REQ_GAIN,
-				      bf_master_8bit(chip->dim_saved[1]),
-				      BF_REG_MASTER_8 + 2 * 1 + 1);
+		ret = bf_vendor_write(chip, BF_REQ_GAIN, bf_master_8bit(r),
+				      BF_REG_MASTER_8 + 2 * out + 1);
 		if (ret < 0)
 			return ret;
 		flag = bf_flag_cycle[chip->flag_cnt];
 		chip->flag_cnt = (chip->flag_cnt + 1) & 3;
-		ret = bf_vendor_write(chip, BF_REQ_CROSSPOINT,
-				      chip->dim_saved[0],
-				      (BF_REG_MASTER_16 + 2 * 1) | flag);
+		ret = bf_vendor_write(chip, BF_REQ_CROSSPOINT, l,
+				      (BF_REG_MASTER_16 + 2 * out) | flag);
 		if (ret < 0)
 			return ret;
-		ret = bf_vendor_write(chip, BF_REQ_CROSSPOINT,
-				      chip->dim_saved[1],
-				      (BF_REG_MASTER_16 + 2 * 1 + 1) | flag);
-		if (ret < 0)
-			return ret;
-		ret = bf_vendor_write(chip, BF_REQ_PREAMP, 0x0000, 0x2000);
+		ret = bf_vendor_write(chip, BF_REQ_CROSSPOINT, r,
+				      (BF_REG_MASTER_16 + 2 * out + 1) | flag);
 		if (ret < 0)
 			return ret;
 	}
+	ret = bf_vendor_write(chip, BF_REQ_PREAMP, on ? 0x2000 : 0x0000,
+			      0x2000);
+	if (ret < 0)
+		return ret;
+	if (on) {
+		chip->dim_saved[0] = chip->master[out][0];
+		chip->dim_saved[1] = chip->master[out][1];
+	}
+	chip->master[out][0] = l;
+	chip->master[out][1] = r;
 	chip->dim = on;
 	return 0;
 }
@@ -1403,9 +1391,55 @@ static int bf_dim_put(struct snd_kcontrol *kctl,
 	if (on == chip->dim)
 		goto out;
 	ret = bf_dim_apply(chip, on);
-	if (ret == 0)
+	if (ret == 0) {
 		ret = 1;
+		if (chip->master_kctl[BF_DIM_OUT])
+			snd_ctl_notify(chip->card, SNDRV_CTL_EVENT_MASK_VALUE,
+				       &chip->master_kctl[BF_DIM_OUT]->id);
+	}
 out:
+	mutex_unlock(&chip->mutex);
+	return ret;
+}
+
+/* What a front-panel DIM press does.  "Dim Main Out" toggles DIM, like
+ * TotalMix by default.  "Report Only" leaves the press to an application,
+ * which sees it through "DIM Button Press Count", as TotalMix leaves it
+ * to whatever its remote setting assigns.
+ */
+static const char *const bf_dim_action_texts[] = {
+	"Dim Main Out", "Report Only"
+};
+
+static int bf_dim_action_info(struct snd_kcontrol *kctl,
+			      struct snd_ctl_elem_info *uinfo)
+{
+	return snd_ctl_enum_info(uinfo, 1, 2, bf_dim_action_texts);
+}
+
+static int bf_dim_action_get(struct snd_kcontrol *kctl,
+			     struct snd_ctl_elem_value *ucontrol)
+{
+	struct snd_usb_babyface *chip = snd_kcontrol_chip(kctl);
+
+	ucontrol->value.enumerated.item[0] = chip->dim_report_only;
+	return 0;
+}
+
+static int bf_dim_action_put(struct snd_kcontrol *kctl,
+			     struct snd_ctl_elem_value *ucontrol)
+{
+	struct snd_usb_babyface *chip = snd_kcontrol_chip(kctl);
+	unsigned int item = ucontrol->value.enumerated.item[0];
+	int ret = 0;
+
+	if (item > 1)
+		return -EINVAL;
+	mutex_lock(&chip->mutex);
+	if (item != chip->dim_report_only) {
+		chip->dim_report_only = item;
+		ret = 1;
+	}
 	mutex_unlock(&chip->mutex);
 	return ret;
 }
@@ -1624,6 +1658,17 @@ int babyface_create_flags(struct snd_usb_babyface *chip)
 		.put = bf_dim_put,
 	}, chip);
 	chip->dim_kctl = kctl;
+	err = snd_ctl_add(chip->card, kctl);
+	if (err < 0)
+		return err;
+
+	kctl = snd_ctl_new1(&(struct snd_kcontrol_new){
+		.iface = SNDRV_CTL_ELEM_IFACE_MIXER,
+		.name = "DIM Button Action",
+		.info = bf_dim_action_info,
+		.get = bf_dim_action_get,
+		.put = bf_dim_action_put,
+	}, chip);
 	err = snd_ctl_add(chip->card, kctl);
 	if (err < 0)
 		return err;
@@ -2191,6 +2236,20 @@ static void bf_panel_notify_kctl(struct snd_usb_babyface *chip,
 		snd_ctl_notify(chip->card, SNDRV_CTL_EVENT_MASK_VALUE, &kctl->id);
 }
 
+/* A front-panel DIM press toggles DIM, unless "DIM Button Action" hands
+ * the button to an application.  Either way bf_panel_tick() counts and
+ * reports the press.
+ */
+static void bf_panel_dim_press(struct snd_usb_babyface *chip)
+{
+	mutex_lock(&chip->mutex);
+	if (!chip->dim_report_only && bf_dim_apply(chip, !chip->dim) == 0) {
+		bf_panel_notify_kctl(chip, chip->dim_kctl);
+		bf_panel_notify_kctl(chip, chip->master_kctl[BF_DIM_OUT]);
+	}
+	mutex_unlock(&chip->mutex);
+}
+
 /* The selection of the IN pair now shown, from panel_sel[]. */
 static void bf_panel_sel_load(struct snd_usb_babyface *chip)
 {
@@ -2327,11 +2386,6 @@ static void bf_panel_write_master(struct snd_usb_babyface *chip, int out,
 			(BF_REG_MASTER_16 + 2 * out + 1) | flag);
 	chip->master[out][0] = l;
 	chip->master[out][1] = r;
-	/* A Phones change while DIM is engaged re-bases the restore. */
-	if (chip->dim && out == 1) {
-		chip->dim_saved[0] = l;
-		chip->dim_saved[1] = r;
-	}
 	if (chip->master_kctl[out])
 		snd_ctl_notify(chip->card, SNDRV_CTL_EVENT_MASK_VALUE,
 			       &chip->master_kctl[out]->id);
@@ -2370,11 +2424,6 @@ static void bf_panel_out_wheel_write(struct snd_usb_babyface *chip, int out,
 			(BF_REG_MASTER_16 + 2 * out + 1) | flag);
 	chip->master[out][0] = l;
 	chip->master[out][1] = r;
-	/* A Phones change while DIM is engaged re-bases the restore. */
-	if (chip->dim && out == 1) {
-		chip->dim_saved[0] = l;
-		chip->dim_saved[1] = r;
-	}
 	if (chip->master_kctl[out])
 		snd_ctl_notify(chip->card, SNDRV_CTL_EVENT_MASK_VALUE,
 			       &chip->master_kctl[out]->id);
@@ -2881,8 +2930,8 @@ static void bf_panel_tick(struct snd_usb_babyface *chip)
 	    chip->panel_prev[3] != BF_PANEL_FLASH_SET)
 		bf_panel_set_phantom(chip);
 
-	/* DIM is a software-assignable button. Report presses without
-	 * choosing a monitor output or changing any gain in the driver.
+	/* DIM: count and report the press, then act on it unless an
+	 * application has taken the button (bf_panel_dim_press()).
 	 */
 	if (st[3] == BF_PANEL_FLASH_DIM &&
 	    chip->panel_prev[3] != BF_PANEL_FLASH_DIM) {
@@ -2890,6 +2939,7 @@ static void bf_panel_tick(struct snd_usb_babyface *chip)
 		if (chip->dim_press_kctl)
 			snd_ctl_notify(chip->card, SNDRV_CTL_EVENT_MASK_VALUE,
 				       &chip->dim_press_kctl->id);
+		bf_panel_dim_press(chip);
 	}
 
 	/* MIX (fader mode) - HOST-latched, like TotalMix (cap_mix.pcap,

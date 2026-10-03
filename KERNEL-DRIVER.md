@@ -576,6 +576,20 @@ arithmetic) - which is exactly why that verification mattered.
   right next step is a fresh Windows capture (set Main Out = AN1/2 in
   TotalMix, press DIM, see what changes) - flagged as an open protocol
   question in PROTOCOL.md rather than guessed at in code.
+- **DIM is 20 dB down from the Main Out's level, and the button acts
+  again** (2026-10-03). USB captures of TotalMix on Windows (2015 unit,
+  RME driver 1.276, firmware 211) showed that RME's DIM is done by
+  TotalMix on the host: it polls `0x17`, and on a DIM press lowers the
+  output Main Out is assigned to by 20 dB from its current level (16-bit
+  master / 10, 8-bit 40 half-dB steps down), plus `0x17` 0x2000/0x2000
+  for the LEDs. With TotalMix exited a press does nothing. TotalMix runs
+  in the tray, so on Windows and Mac DIM always works; Linux has no such
+  process, so the driver provides the default. `Dim Switch` now dims
+  AN1/2 that way, and a press toggles it unless `DIM Button Action` is
+  `Report Only`, for an application that handles DIM itself. While DIM
+  is on, the master cache holds the dimmed level; DIM off restores the
+  level saved at DIM on, so a level raised while dimmed never comes back
+  20 dB louder. The press is still counted in `DIM Button Press Count`.
 - **The front-panel DIM button is reported, not acted on** (changed
   2026-09-17, issue #4). Each press increments the read-only
   `DIM Button Press Count` control and sends a change event; the driver
