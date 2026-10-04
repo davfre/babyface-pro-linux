@@ -23,7 +23,7 @@ post-rename control order (AN1/2 = numid 1, PH3/4 = numid 3).
 
 Expected output now:
 
-== an12 ==  8192 0x2000 -20.0 (a -20 dBFS tone, 1:1)
+== an12 ==  181 0.0 -20.0 (a -20 dBFS tone, 1:1)
 """
 import subprocess, wave, math, os, time
 
@@ -72,15 +72,16 @@ def sweep(tag, lb_numid, master_numid, ch, recch):
     ch: the record channel the bus lands on; recch: monitor channel
     (the tone should sit there at ~-47 dBFS as a sanity check)."""
     print("== %s (numid=%d): record ch%d = the bus ==" % (tag, lb_numid, ch))
-    print("%8s %7s %8s %10s" % ("alsaval", "reg", "440Hz", "mon440"))
+    print("%8s %7s %8s %10s" % ("alsaval", "dB", "440Hz", "mon440"))
     amixer(lb_numid, 1)
-    for v in (0, 512, 1024, 2048, 4096, 8192, 12288, 16384):
+    # master steps: 0.5 dB each, 181 = 0 dB, 193 = +6 dB, 0 = mute
+    for v in (0, 61, 101, 141, 161, 169, 181, 193):
         amixer(master_numid, v)
         path = "/tmp/lb_%s_%d.wav" % (tag, v)
         rec(path)
-        reg = v * 0x4000 // 16384
-        print("%8d %#7x %8.1f %10.1f" %
-              (v, reg, level440(path, ch), level440(path, recch)))
+        db = (v - 181) / 2 if v else float("-inf")
+        print("%8d %7.1f %8.1f %10.1f" %
+              (v, db, level440(path, ch), level440(path, recch)))
     amixer(lb_numid, 0)
 
 def main():
@@ -101,8 +102,8 @@ def main():
     finally:
         pw.terminate()
         pw.wait()
-        amixer(1, 8192)
-        amixer(3, 8192)
+        amixer(1, 181)
+        amixer(3, 181)
 
 if __name__ == "__main__":
     main()

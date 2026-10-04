@@ -65,45 +65,8 @@ const u8 bf_xpoint_block[6] = { 1, 0, 2, 3, 4, 5 };
  */
 static const u8 bf_master_out[6] = { 0, 1, 2, 3, 4, 5 };
 
-/* The 16-bit master value -> the 8-bit companion code (0.5 dB/step).
- * Integer-only: half_db = 12*log2(v/0x2000) via ilog2 + an 8-bit
- * fractional-octave table (12*log2(1 + n/256), ~0.05 dB resolution -
- * fine enough for the +/-0.5 dB panel wheel to track the round-trip).
- */
-static const u8 bf_lg2_frac[256] = {
-	0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1,
-	1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2,
-	2, 2, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3,
-	3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 4, 4, 4, 4, 4,
-	4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 5, 5, 5, 5,
-	5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5,
-	6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6,
-	6, 6, 6, 6, 6, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7,
-	7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 8, 8, 8, 8, 8,
-	8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8,
-	8, 8, 8, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9,
-	9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 10, 10, 10, 10,
-	10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10,
-	10, 10, 10, 10, 10, 10, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11,
-	11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11,
-	11, 11, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12,
-};
-
-/* 16-bit master -> dBx2 (12 half-dB per octave; 0x2000 = 0 dB).
- * Shared by the 8-bit companion and the front-panel OUT wheel.
- */
-int bf_master_half_db(u16 vol16)
-{
-	unsigned int k, frac;
-
-	vol16 = clamp(vol16, 1, 0x4000);
-	k = ilog2(vol16);
-	frac = ((vol16 - (1u << k)) << 8) >> k;
-	return 12 * (int)k - 156 + bf_lg2_frac[frac];
-}
-
-/* dBx2 -> 16-bit master (0x2000*2^(half_db/12), rounded).  The
- * inverse of bf_master_half_db - the 12th-root table 2^(n/12).
+/* dBx2 -> 16-bit master (0x2000*2^(half_db/12), rounded), from the
+ * 12th-root table 2^(n/12).
  */
 static const u16 bf_twelfth[12] = {
 	0x1000, 0x10f4, 0x11f6, 0x1307, 0x1429, 0x155c,
@@ -130,11 +93,20 @@ int bf_master_16bit(int half_db)
 	return (u16)clamp(v, 1, 0x4000);
 }
 
-u8 bf_master_8bit(u16 vol16)
+/* A master control step (BF_MASTER_STEP_*) -> the two registers. */
+u8 bf_master_reg8(unsigned int step)
 {
-	if (vol16 == 0)
+	if (step == 0)
 		return BF_MASTER_MUTE;
-	return (u8)clamp(0xf3 + bf_master_half_db(vol16), BF_MASTER_8_MIN, 0xff);
+	return (u8)clamp((int)step - BF_MASTER_STEP_0DB + BF_MASTER_8_0DB,
+			 BF_MASTER_8_MIN, 0xff);
+}
+
+u16 bf_master_reg16(unsigned int step)
+{
+	if (step == 0)
+		return 0;
+	return bf_master_16bit((int)step - BF_MASTER_STEP_0DB);
 }
 
 /* The cold-init register clear zeroes the mixer registers TotalMix
@@ -203,8 +175,9 @@ int babyface_write_default_mixer(struct snd_usb_babyface *chip)
 				      (BF_REG_MASTER_16 + 2 * out + 1) | flag);
 		if (ret < 0)
 			return ret;
-		chip->master[out][0] = gain16;
-		chip->master[out][1] = gain16;
+		chip->master[out][0] = analog ? BF_MASTER_STEP_MINUS20 :
+						BF_MASTER_STEP_0DB;
+		chip->master[out][1] = chip->master[out][0];
 		chip->muted[out] = false;
 	}
 
@@ -262,8 +235,8 @@ int bf_apply_masters(struct snd_usb_babyface *chip)
 	for (out = 0; out < 6; out++) {
 		u16 l = chip->muted[out] ? 0 : chip->master[out][0];
 		u16 r = chip->muted[out] ? 0 : chip->master[out][1];
-		u8 l8 = chip->muted[out] ? BF_MASTER_MUTE : bf_master_8bit(l);
-		u8 r8 = chip->muted[out] ? BF_MASTER_MUTE : bf_master_8bit(r);
+		u8 l8 = bf_master_reg8(l);
+		u8 r8 = bf_master_reg8(r);
 
 		ret = bf_vendor_write(chip, BF_REQ_GAIN, l8,
 				      BF_REG_MASTER_8 + 2 * out);
@@ -275,11 +248,11 @@ int bf_apply_masters(struct snd_usb_babyface *chip)
 			return ret;
 		flag = bf_flag_cycle[chip->flag_cnt];
 		chip->flag_cnt = (chip->flag_cnt + 1) & 3;
-		ret = bf_vendor_write(chip, BF_REQ_CROSSPOINT, l,
+		ret = bf_vendor_write(chip, BF_REQ_CROSSPOINT, bf_master_reg16(l),
 				      (BF_REG_MASTER_16 + 2 * out) | flag);
 		if (ret < 0)
 			return ret;
-		ret = bf_vendor_write(chip, BF_REQ_CROSSPOINT, r,
+		ret = bf_vendor_write(chip, BF_REQ_CROSSPOINT, bf_master_reg16(r),
 				      (BF_REG_MASTER_16 + 2 * out + 1) | flag);
 		if (ret < 0)
 			return ret;
@@ -289,16 +262,13 @@ int bf_apply_masters(struct snd_usb_babyface *chip)
 
 /* -- mixer controls ------------------------ */
 
-/* dB TLV for the output masters: 0x2000 = 0 dB, 0x4000 = +6 dB
- * (CALIBRATION.md) with the hardware 20*log10(v/0x2000) law - the raw
- * 16-bit value IS the linear amplitude.  WirePlumber needs this to map
- * the volume 1:1 to the hardware control instead of applying a software
- * volume on top (which left the output ~30 dB down).
+/* dB TLV for the output masters: 0.5 dB per step, step 0 = mute,
+ * step 1 = -90 dB, 181 = 0 dB, and the top step 193 = +6 dB, above
+ * unity as on the OUT wheel (BF_MASTER_STEP_*).  WirePlumber needs it
+ * to map the volume 1:1 to the hardware control instead of applying a
+ * software volume on top.
  */
-static const DECLARE_TLV_DB_RANGE(bf_master_tlv,
-	0, 0x2000, TLV_DB_LINEAR_ITEM(-6500, 0),
-	0x2000, 0x4000, TLV_DB_LINEAR_ITEM(0, 600)
-);
+static const DECLARE_TLV_DB_SCALE(bf_master_tlv, -9050, 50, 1);
 
 static int bf_master_info(struct snd_kcontrol *kctl,
 			  struct snd_ctl_elem_info *uinfo)
@@ -306,7 +276,7 @@ static int bf_master_info(struct snd_kcontrol *kctl,
 	uinfo->type = SNDRV_CTL_ELEM_TYPE_INTEGER;
 	uinfo->count = 2;
 	uinfo->value.integer.min = 0;
-	uinfo->value.integer.max = 0x4000;	/* +6 dB = 2 x 0dB(0x2000) */
+	uinfo->value.integer.max = BF_MASTER_STEP_MAX;
 	uinfo->value.integer.step = 1;
 	return 0;
 }
@@ -332,13 +302,13 @@ static int bf_master_put(struct snd_kcontrol *kctl,
 	u16 l, r, wire_l, wire_r, flag;
 	int ret = 0;
 
-	/* The control is declared 0..0x4000 (+6 dB); reject anything outside
-	 * so the 16-bit companion register and the cache stay in spec (the
-	 * ALSA core only enforces this with CONFIG_SND_CTL_INPUT_VALIDATION).
-	 * Check before narrowing: .value.integer.value[] is a long, so a
-	 * value of 0x10000 or more would wrap to a passing u16.
+	/* Reject anything outside the declared range, so the registers and
+	 * the cache stay in spec (the ALSA core only enforces this with
+	 * CONFIG_SND_CTL_INPUT_VALIDATION).  Check before narrowing:
+	 * .value.integer.value[] is a long.
 	 */
-	if (nl < 0 || nl > 0x4000 || nr < 0 || nr > 0x4000)
+	if (nl < 0 || nl > BF_MASTER_STEP_MAX ||
+	    nr < 0 || nr > BF_MASTER_STEP_MAX)
 		return -EINVAL;
 	l = nl;
 	r = nr;
@@ -352,22 +322,22 @@ static int bf_master_put(struct snd_kcontrol *kctl,
 	flag = bf_flag_cycle[chip->flag_cnt];
 	chip->flag_cnt = (chip->flag_cnt + 1) & 3;
 
-	/* The 8-bit register is the real volume; the 16-bit is its
-	 * companion (kept in sync like TotalMix).
+	/* Both registers, as TotalMix writes them: the 8-bit is the analog
+	 * level, the 16-bit the digital one.
 	 */
-	ret = bf_vendor_write(chip, BF_REQ_GAIN, bf_master_8bit(wire_l),
+	ret = bf_vendor_write(chip, BF_REQ_GAIN, bf_master_reg8(wire_l),
 			      BF_REG_MASTER_8 + 2 * out);
 	if (ret < 0)
 		goto out;
-	ret = bf_vendor_write(chip, BF_REQ_GAIN, bf_master_8bit(wire_r),
+	ret = bf_vendor_write(chip, BF_REQ_GAIN, bf_master_reg8(wire_r),
 			      BF_REG_MASTER_8 + 2 * out + 1);
 	if (ret < 0)
 		goto out;
-	ret = bf_vendor_write(chip, BF_REQ_CROSSPOINT, wire_l,
+	ret = bf_vendor_write(chip, BF_REQ_CROSSPOINT, bf_master_reg16(wire_l),
 			      (BF_REG_MASTER_16 + 2 * out) | flag);
 	if (ret < 0)
 		goto out;
-	ret = bf_vendor_write(chip, BF_REQ_CROSSPOINT, wire_r,
+	ret = bf_vendor_write(chip, BF_REQ_CROSSPOINT, bf_master_reg16(wire_r),
 			      (BF_REG_MASTER_16 + 2 * out + 1) | flag);
 	if (ret < 0)
 		goto out;
@@ -445,22 +415,22 @@ static int bf_mute_put(struct snd_kcontrol *kctl,
 		 * pre-mute fader value host-side), 8-bit + 16-bit.
 		 */
 		ret = bf_vendor_write(chip, BF_REQ_GAIN,
-				      bf_master_8bit(chip->master[out][0]),
+				      bf_master_reg8(chip->master[out][0]),
 				      BF_REG_MASTER_8 + 2 * out);
 		if (ret < 0)
 			goto out;
 		ret = bf_vendor_write(chip, BF_REQ_GAIN,
-				      bf_master_8bit(chip->master[out][1]),
+				      bf_master_reg8(chip->master[out][1]),
 				      BF_REG_MASTER_8 + 2 * out + 1);
 		if (ret < 0)
 			goto out;
 		ret = bf_vendor_write(chip, BF_REQ_CROSSPOINT,
-				      chip->master[out][0],
+				      bf_master_reg16(chip->master[out][0]),
 				      (BF_REG_MASTER_16 + 2 * out) | flag);
 		if (ret < 0)
 			goto out;
 		ret = bf_vendor_write(chip, BF_REQ_CROSSPOINT,
-				      chip->master[out][1],
+				      bf_master_reg16(chip->master[out][1]),
 				      (BF_REG_MASTER_16 + 2 * out + 1) | flag);
 		if (ret < 0)
 			goto out;
@@ -1362,24 +1332,24 @@ static int bf_dim_apply(struct snd_usb_babyface *chip, bool on)
 			return ret;
 	} else {
 		ret = bf_vendor_write(chip, BF_REQ_GAIN,
-				      bf_master_8bit(chip->dim_saved[0]),
+				      bf_master_reg8(chip->dim_saved[0]),
 				      BF_REG_MASTER_8 + 2 * 1);
 		if (ret < 0)
 			return ret;
 		ret = bf_vendor_write(chip, BF_REQ_GAIN,
-				      bf_master_8bit(chip->dim_saved[1]),
+				      bf_master_reg8(chip->dim_saved[1]),
 				      BF_REG_MASTER_8 + 2 * 1 + 1);
 		if (ret < 0)
 			return ret;
 		flag = bf_flag_cycle[chip->flag_cnt];
 		chip->flag_cnt = (chip->flag_cnt + 1) & 3;
 		ret = bf_vendor_write(chip, BF_REQ_CROSSPOINT,
-				      chip->dim_saved[0],
+				      bf_master_reg16(chip->dim_saved[0]),
 				      (BF_REG_MASTER_16 + 2 * 1) | flag);
 		if (ret < 0)
 			return ret;
 		ret = bf_vendor_write(chip, BF_REQ_CROSSPOINT,
-				      chip->dim_saved[1],
+				      bf_master_reg16(chip->dim_saved[1]),
 				      (BF_REG_MASTER_16 + 2 * 1 + 1) | flag);
 		if (ret < 0)
 			return ret;
@@ -2316,13 +2286,13 @@ static void bf_panel_write_master(struct snd_usb_babyface *chip, int out,
 
 	flag = bf_flag_cycle[chip->flag_cnt];
 	chip->flag_cnt = (chip->flag_cnt + 1) & 3;
-	bf_vendor_write(chip, BF_REQ_GAIN, bf_master_8bit(l),
+	bf_vendor_write(chip, BF_REQ_GAIN, bf_master_reg8(l),
 			BF_REG_MASTER_8 + 2 * out);
-	bf_vendor_write(chip, BF_REQ_GAIN, bf_master_8bit(r),
+	bf_vendor_write(chip, BF_REQ_GAIN, bf_master_reg8(r),
 			BF_REG_MASTER_8 + 2 * out + 1);
-	bf_vendor_write(chip, BF_REQ_CROSSPOINT, l,
+	bf_vendor_write(chip, BF_REQ_CROSSPOINT, bf_master_reg16(l),
 			(BF_REG_MASTER_16 + 2 * out) | flag);
-	bf_vendor_write(chip, BF_REQ_CROSSPOINT, r,
+	bf_vendor_write(chip, BF_REQ_CROSSPOINT, bf_master_reg16(r),
 			(BF_REG_MASTER_16 + 2 * out + 1) | flag);
 	chip->master[out][0] = l;
 	chip->master[out][1] = r;
@@ -2363,9 +2333,9 @@ static void bf_panel_out_wheel_write(struct snd_usb_babyface *chip, int out,
 
 	flag = bf_flag_cycle[chip->flag_cnt];
 	chip->flag_cnt = (chip->flag_cnt + 1) & 3;
-	bf_vendor_write(chip, BF_REQ_CROSSPOINT, l,
+	bf_vendor_write(chip, BF_REQ_CROSSPOINT, bf_master_reg16(l),
 			(BF_REG_MASTER_16 + 2 * out) | flag);
-	bf_vendor_write(chip, BF_REQ_CROSSPOINT, r,
+	bf_vendor_write(chip, BF_REQ_CROSSPOINT, bf_master_reg16(r),
 			(BF_REG_MASTER_16 + 2 * out + 1) | flag);
 	chip->master[out][0] = l;
 	chip->master[out][1] = r;
@@ -2436,13 +2406,13 @@ static int bf_out_wheel_step(int half_db)
  */
 static int bf_out_wheel_level(struct snd_usb_babyface *chip, int out, int ch)
 {
-	u16 raw = chip->master[out][ch];
+	u16 step = chip->master[out][ch];
 
-	if (raw == chip->panel_master_last[out][ch])
+	if (step == chip->panel_master_last[out][ch])
 		return chip->panel_out_hdb[out][ch];
-	if (!raw)
+	if (!step)
 		return BF_OUT_WHEEL_MUTED;
-	return bf_master_half_db(raw);
+	return step - BF_MASTER_STEP_0DB;
 }
 
 /* One click on both sides.  They move together, so a balance is kept.
@@ -2515,7 +2485,7 @@ static void bf_panel_out_wheel(struct snd_usb_babyface *chip, int delta)
 	}
 	for (ch = 0; ch < 2; ch++)
 		next[ch] = db[ch] < BF_OUT_WHEEL_FLOOR ? 0 :
-			   bf_master_16bit(db[ch]);
+			   db[ch] + BF_MASTER_STEP_0DB;
 	bf_panel_out_wheel_write(chip, out, next[0], next[1]);
 	for (ch = 0; ch < 2; ch++) {
 		chip->panel_master_last[out][ch] = next[ch];
@@ -2565,9 +2535,11 @@ static void bf_panel_out_resync(struct snd_usb_babyface *chip)
 				BF_REG_MASTER_8 + 2 * out);
 		bf_vendor_write(chip, BF_REQ_GAIN, BF_MASTER_8_0DB + db[1],
 				BF_REG_MASTER_8 + 2 * out + 1);
-		bf_vendor_write(chip, BF_REQ_CROSSPOINT, chip->master[out][0],
+		bf_vendor_write(chip, BF_REQ_CROSSPOINT,
+				bf_master_reg16(chip->master[out][0]),
 				(BF_REG_MASTER_16 + 2 * out) | flag);
-		bf_vendor_write(chip, BF_REQ_CROSSPOINT, chip->master[out][1],
+		bf_vendor_write(chip, BF_REQ_CROSSPOINT,
+				bf_master_reg16(chip->master[out][1]),
 				(BF_REG_MASTER_16 + 2 * out + 1) | flag);
 	}
 unlock:
@@ -2621,20 +2593,19 @@ static void bf_panel_gain_wheel(struct snd_usb_babyface *chip, int delta)
 
 /* OUT-balance wheel (hold SELECT + wheel - manual sec. 5.1 "Output
  * Balance"): moves the stereo image of the OUT-selected output by
- * attenuating ONE side, linear in raw (cap_pan_stereo.pcap: the varied
- * side = fixed*(1-|pan|), ~0x9C raw step per click at 0 dB - the PAN
- * of the stereo hardware output in TotalMix).  The balance position is
- * derived from the L/R master ratio (the louder side is the fixed
- * one), so the gesture needs no extra state - and the OUT wheel below
- * moves both sides by the same dB to preserve an existing balance.
+ * attenuating one side.  The louder side stays where it is; the other
+ * moves by the OUT wheel's step for its distance below the louder one
+ * (bf_out_wheel_step()), so the image moves in 0.5 dB steps near the
+ * centre and faster towards one side, and that side mutes below the
+ * wheel's floor.  The balance is read from the L/R masters, so the
+ * gesture needs no state of its own, and the OUT wheel above moves both
+ * sides by the same step, which keeps it.
  */
 static void bf_panel_balance_wheel(struct snd_usb_babyface *chip, int delta)
 {
 	int out = READ_ONCE(chip->panel_out) == 3 ? 5 :
 		  READ_ONCE(chip->panel_out) == 2 ? 1 : 0;
-	u16 l, r;
-	int bal;		/* -100..+100; + = image right (left varies) */
-	u16 fixed, varied;
+	int db[2], ch, i, louder, bal, lim;
 
 	mutex_lock(&chip->mutex);
 	if (chip->muted[out]) {
@@ -2646,22 +2617,28 @@ static void bf_panel_balance_wheel(struct snd_usb_babyface *chip, int delta)
 	 * master/mute/dim writers (they update chip->master[] under the
 	 * same mutex).
 	 */
-	l = chip->master[out][0];
-	r = chip->master[out][1];
-	/* Balance from the L/R ratio: the louder side is the fixed one. */
-	if (l >= r) {
-		bal = r ? -(100 - (100 * r) / l) : -100;
-		fixed = l;
-	} else {
-		bal = l ? (100 - (100 * l) / r) : 100;
-		fixed = r;
+	for (ch = 0; ch < 2; ch++)
+		db[ch] = chip->master[out][ch] ?
+			 chip->master[out][ch] - BF_MASTER_STEP_0DB :
+			 BF_OUT_WHEEL_MUTED;
+	louder = max(db[0], db[1]);
+	if (louder < BF_OUT_WHEEL_FLOOR) {
+		mutex_unlock(&chip->mutex);
+		return;
 	}
-	bal = clamp(bal + delta * 2, -100, 100);
-	varied = (u16)((u32)fixed * (100 - abs(bal)) / 100);
-	l = bal >= 0 ? varied : fixed;
-	r = bal >= 0 ? fixed : varied;
+	/* bal > 0: the left side is the quieter one, the image is right. */
+	bal = db[1] - db[0];
+	for (i = 0; i < abs(delta); i++)
+		bal += (delta > 0 ? 1 : -1) * bf_out_wheel_step(-abs(bal));
+	lim = louder - BF_OUT_WHEEL_MUTED;
+	bal = clamp(bal, -lim, lim);
+	db[0] = bal > 0 ? louder - bal : louder;
+	db[1] = bal < 0 ? louder + bal : louder;
+	for (ch = 0; ch < 2; ch++)
+		db[ch] = db[ch] < BF_OUT_WHEEL_FLOOR ? 0 :
+			 db[ch] + BF_MASTER_STEP_0DB;
 
-	bf_panel_write_master(chip, out, l, r);
+	bf_panel_write_master(chip, out, db[0], db[1]);
 	mutex_unlock(&chip->mutex);
 }
 

@@ -36,7 +36,7 @@ def amixer(args):
 
 # Phones loopback ON (numid 107), Phones master 0 dB (numid 3)
 amixer(["numid=107", "1"])
-amixer(["numid=3", "8192"])
+amixer(["numid=3", "181"])
 
 pw = subprocess.Popen(["pw-cat", "--playback", "--target", SINK, TONE],
                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

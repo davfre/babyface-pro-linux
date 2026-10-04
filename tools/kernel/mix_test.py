@@ -162,7 +162,7 @@ while time.monotonic() - t0 < DUR:
             v = get_int(last["_master"])
             if v != last["fvals"].get("master"):
                 last["fvals"]["master"] = v
-                print("[%6.2f] %-6s master = 0x%04x"
+                print("[%6.2f] %-6s master = %d"
                       % (time.monotonic() - t0, OUT_NAMES[co], v), flush=True)
     for i, g in enumerate(gains):
         if rd(g):
