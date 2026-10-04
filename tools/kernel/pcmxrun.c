@@ -116,6 +116,7 @@ static snd_pcm_sframes_t xread(snd_pcm_t *p, int32_t *buf, snd_pcm_uframes_t n, 
 static void *writer_thread(void *arg)
 {
 	int32_t *chunk = calloc(period * pb_ch, sizeof(int32_t));
+	int restart = 0;
 	if (!chunk)
 		return NULL;
 	while (written < total) {
@@ -125,12 +126,20 @@ static void *writer_thread(void *arg)
 			if (w == -EPIPE) {
 				pb_xruns++;
 				snd_pcm_prepare(pb);
-				snd_pcm_start(pb);
+				restart = 1;
 				continue;
 			}
 			fprintf(stderr, "write: %s\n", snd_strerror(w));
 			err_count++;
 			break;
+		}
+		/* The core refuses to start playback with an empty ring, and
+		 * mmap access never starts it by itself: start once the next
+		 * period is in.  (writei has already started it: -EBADFD.)
+		 */
+		if (restart) {
+			snd_pcm_start(pb);
+			restart = 0;
 		}
 		written += w;
 	}
