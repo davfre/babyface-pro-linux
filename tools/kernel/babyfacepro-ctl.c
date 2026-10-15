@@ -2727,7 +2727,7 @@ static void bf_panel_tick(struct snd_usb_babyface *chip)
 		if (in)
 			WRITE_ONCE(chip->panel_in, in);
 		/* The IN pair is only known from here on: pick up its
-		 * selection (kept across a re-probe).
+		 * selection (kept across a suspend, or set by alsactl).
 		 */
 		bf_panel_sel_load(chip);
 		out = bf_panel_out_decode(st[1] & 0x07);
@@ -2974,10 +2974,11 @@ void babyface_panel_start(struct snd_usb_babyface *chip)
 	 * dark until the next SELECT press, which shows it again instead of
 	 * stepping (hardware-verified 2026-09-29: after an unplug, the
 	 * first press lit both channels).  What panel_sel[] holds comes
-	 * from before (a re-probe keeps it, see bf_saved) or is not known,
-	 * and an unknown selection targets nothing: SET, the IN wheel and
-	 * the MIX wheel then do nothing rather than act on the wrong
-	 * channel, until "Front Panel Select" is set to what the LEDs show.
+	 * from before a suspend, from alsactl after a boot, or is not
+	 * known, and an unknown selection targets nothing: SET, the IN
+	 * wheel and the MIX wheel then do nothing rather than act on the
+	 * wrong channel, until "Front Panel Select" is set to what the LEDs
+	 * show.
 	 */
 	bf_panel_sel_load(chip);
 	chip->panel_select_armed = false;
@@ -3104,19 +3105,20 @@ static int bf_panel_select_put(struct snd_kcontrol *kctl,
 	struct snd_usb_babyface *chip = snd_kcontrol_chip(kctl);
 	unsigned int v = ucontrol->value.enumerated.item[0];
 	int pair = kctl->private_value;
-	/* alsactl restores the values stored at the last shutdown shortly
-	 * after every probe.
+	/* alsactl restores the values of its last store shortly after
+	 * every probe.
 	 */
 	bool restore = time_is_after_jiffies(chip->panel_start + 3 * HZ);
 	s8 sel = v < 4 ? v : -1;
 
 	if (v > 4)
 		return -EINVAL;
-	/* After a boot nothing is known and the stored values are what there
-	 * is; after a re-probe the driver kept what it tracked, which is
-	 * newer than anything stored.
+	/* After a boot they are what there is.  After a re-probe the unit
+	 * may have taken SELECT presses since that store, and a wrong
+	 * selection makes SET and the wheels act on a channel that is not
+	 * the lit one: leave the pair unknown, as for a never-seen pair.
 	 */
-	if (restore && chip->panel_sel[pair] >= 0)
+	if (restore && chip->reprobe)
 		return 0;
 	if (pair == READ_ONCE(chip->panel_in) - 1 && !restore && sel >= 0)
 		/* Set while the LEDs show the selection: the next press steps
