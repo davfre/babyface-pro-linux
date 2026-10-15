@@ -50,7 +50,7 @@ libasound_module_pcm_tuxmix.so  ← PipeWire via spa-alsa (sink/source)
 | Interrupt stream (ep 0x01/0x82, 256 frames/URB, 8 URBs/direction) | ✅ |
 | PCM playback + capture (S32_LE, 24 msbits, 9 rates 32-192 kHz) | ✅ |
 | Rate switch = SET_INTERFACE(5, alt) (3 bandwidth classes) | ✅ 32/44.1/48/64/88.2 = alt1, 96/128 = alt2, 176.4/192 = alt3 — measured exact (48/96/192 kHz frame rates) |
-| Controls: 6 output masters (0-0x4000 raw, 0 dB = 0x2000) + mutes | ✅ per-output names ("AN1/2" / "PH3/4" / … Playback Volume+Switch) — the 8-bit register is the REAL volume (0.5 dB/step, 0xF3 = 0 dB) |
+| Controls: 6 output masters (0.5 dB steps 0-193: 0 = mute, 1 = -90 dB, 181 = 0 dB, 193 = +6 dB; 0-0x4000 raw until 2026-10) + mutes | ✅ per-output names ("AN1/2" / "PH3/4" / … Playback Volume+Switch) — the 8-bit register is the analog volume (0.5 dB/step, 0xF3 = 0 dB), the 16-bit the digital outputs' |
 | System volume = PipeWire SOFTWARE volume | ✅ DONE 2026-08-26 (cap_sysvol2.pcap: the Windows volume is a host-side stream gain, zero USB writes): the masters are named per output so SPA finds no "Master" element → the sink falls back to software volume; `wpctl set-volume` no longer moves any hardware register (verified). See “System-volume model — CORRECTED AGAIN” |
 | Controls: 4 preamp gains — TWO laws | ✅ AN1/2 mic: 0-65 dB in 1 dB steps, packed `(fine << 5) | coarse` (corrected 2026-09-13, was wrongly read as 3.25 dB/step + a transaction counter — see the gain-encoding entry below); AN3/4 instrument: 0-9 dB control, raw = dB×2 = 0-18 (0.5 dB/step, cap_gain34 — `bf_gain_max_db`) |
 | Controls: 2× phantom + 2× PAD (0x17 0x003F + 0x21 commit) | ✅ (LEDs + relay clicks) |
@@ -716,6 +716,10 @@ sound card in PipeWire:
    0.5 → ~0x07F9 ≈ −12 dB) and `softVolumes` stays [1.0, 1.0] — no
    software volume at all.  The data path is untouched (loopback RMS
    identical at sink volume 0.5 and 1.0).
+   **Since 2026-10** the masters count the 8-bit register's 0.5 dB
+   steps instead (a `DB_SCALE` TLV, -90 dB to +6 dB, step 0 = mute), so
+   the driver no longer converts the 16-bit value to the 8-bit code
+   through a log table; the 16-bit register is derived from the step.
 
 **Measured parity (loopback AN1/2 OUT → capture ch10/11, 440 Hz sine at
 −8 dBFS source, 48 kHz):** aplay direct = −9.38 dBFS RMS; pw-cat via the

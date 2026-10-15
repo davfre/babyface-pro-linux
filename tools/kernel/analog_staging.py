@@ -50,7 +50,7 @@ if not os.path.exists(TONE) or os.path.getsize(TONE) < 5e6:
     subprocess.run(["python3", "tools/kernel/mktone.py", TONE, "440", "-20", "60"])
 
 # setup: AN1/2 master 0 dB, mic gain 0, 48V OFF, input = line
-amixer(["numid=1", "8192"])
+amixer(["numid=1", "181"])
 amixer(["name='Mic 1 Capture Volume'", "0"])
 amixer(["name='Phantom Power Mic 1'", "off"])
 

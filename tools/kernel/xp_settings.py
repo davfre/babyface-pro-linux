@@ -40,7 +40,7 @@ def vwrite(req, val, idx):
                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 amixer(["numid=106", "1"])   # AN1/2 loopback ON
-amixer(["numid=1", "8192"])  # AN1/2 master 0 dB
+amixer(["numid=1", "181"])  # AN1/2 master 0 dB
 pw = subprocess.Popen(["pw-cat", "--playback", "--target", SINK, TONE],
                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 time.sleep(2)

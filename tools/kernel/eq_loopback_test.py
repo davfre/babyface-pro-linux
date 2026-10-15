@@ -81,7 +81,7 @@ def main():
                         TONE, "440", "-20", "60"])
     # routing: kill the feedback path, keep PB1/2->AN1/2 at 0 dB
     cset("numid=21", 0)          # AN1 -> AN1/2 xpoint = -inf
-    cset("numid=1", 8192)        # AN1/2 master 0 dB
+    cset("numid=1", 181)         # AN1/2 master 0 dB
     cset("numid=29", 5792)       # PB1 -> AN1/2 xpoint = 0 dB
     cset("numid=30", 5792)       # PB2 -> AN1/2 xpoint = 0 dB
     cset("numid=106", "1,1")     # loopback AN1/2 ON (single-active)

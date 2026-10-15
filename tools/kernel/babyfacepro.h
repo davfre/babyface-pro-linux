@@ -249,12 +249,12 @@
  */
 #define BF_MASTER_0DB			0x2000
 
-/* The 8-bit master is the REAL output volume (hardware-verified
- * 2026-08-24: writing it changes the level, the 16-bit does not).
- * Scale: 0.5 dB per step, 0xf3 = 0 dB (the scene-load default),
- * bottom 0x73 = -64 dB (silence), top 0xff = +6 dB.  The 16-bit
- * register is a companion kept in sync (TotalMix writes both).
- * The mute value is 0x3B.
+/* Each output has two master registers, and TotalMix writes both.  The
+ * 8-bit one is the analog level (hardware-verified 2026-08-24: writing
+ * it changes the level of an analog output, the 16-bit does not), in
+ * 0.5 dB steps: 0xf3 = 0 dB (the scene-load default), bottom 0x73 =
+ * -64 dB (silence), top 0xff = +6 dB, mute 0x3B.  The 16-bit one is
+ * linear (BF_MASTER_0DB) and is the level of the digital outputs.
  */
 #define BF_MASTER_8_0DB			0xf3
 #define BF_MASTER_8_MIN			0x73
@@ -265,6 +265,15 @@
  */
 #define BF_MASTER_MINUS20_8		0xcb
 #define BF_MASTER_MINUS20_16		0x0333
+
+/* The output master controls count the 8-bit register's 0.5 dB steps,
+ * over the front-panel OUT wheel's range: 0 is mute, 1 is -90 dB and
+ * BF_MASTER_STEP_MAX is +6 dB.  Below -64 dB the 8-bit register stays
+ * at its bottom and only the 16-bit one goes lower.
+ */
+#define BF_MASTER_STEP_0DB		181
+#define BF_MASTER_STEP_MAX		193
+#define BF_MASTER_STEP_MINUS20		(BF_MASTER_STEP_0DB - 40)
 
 /* The front-panel gain/display family (0x1A, wIdx 0x000A + mic 0-3;
  * cap_panel/cap_mix.pcap): in gain mode the wheel writes the "ADC
@@ -384,7 +393,7 @@ struct snd_usb_babyface {
 	struct snd_kcontrol *master_kctl[6];
 	struct snd_kcontrol *dim_press_kctl;
 	u32 dim_press_count;		/* front-panel DIM presses, wraps */
-	u16 master[6][2];		/* cached 16-bit masters */
+	u16 master[6][2];		/* cached masters, in BF_MASTER_STEP_* */
 	bool muted[6];
 	u16 dim_saved[2];		/* pre-DIM Phones master (out 1 L/R) */
 	bool dim;			/* DIM engaged (fixed -20 dB on Phones) */
@@ -471,9 +480,9 @@ struct snd_usb_babyface {
 					 * selhold_probe2 - no engaged bit)
 					 */
 	/* The OUT wheel's own level per side, in half-dB, valid while the
-	 * master still holds the value the wheel last wrote (the 16-bit
-	 * value can't hold every half-dB step, nor the device's range
-	 * below -64 dB, nor its mute).  0xffff = nothing written yet.
+	 * master still holds the value the wheel last wrote (a muted side
+	 * below the floor keeps its offset here, which the master can't
+	 * hold).  0xffff = nothing written yet.
 	 */
 	u16 panel_master_last[6][2];
 	s16 panel_out_hdb[6][2];
@@ -578,9 +587,9 @@ int babyface_create_xpoints(struct snd_usb_babyface *chip);
 int babyface_create_flags(struct snd_usb_babyface *chip);
 
 /* Master + gain law helpers - shared with the front-panel wheels. */
-int bf_master_half_db(u16 vol16);	/* 16-bit master -> dBx2 */
 int bf_master_16bit(int half_db);	/* dBx2 -> 16-bit master */
-u8 bf_master_8bit(u16 vol16);		/* 16-bit master -> 8-bit companion */
+u8 bf_master_reg8(unsigned int step);	/* master step -> 8-bit register */
+u16 bf_master_reg16(unsigned int step);	/* master step -> 16-bit register */
 int bf_gain_max_db(int mic);
 int bf_gain_db(int mic, u8 raw);	u8 bf_gain_raw(int mic, int db);
 
