@@ -600,18 +600,21 @@ static bool babyface_capture_copy(struct snd_usb_babyface *chip,
 
 		dst = rt->dma_area + frames_to_bytes(rt, pos);
 		for (i = 0; i < chans; i++) {
-			/* Channel map: app ch0-3 = device words 0-3 (AN1-4);
-			 * app ch4-9 = words 6-11 (ADAT/SPDIF); app ch10/11 =
-			 * words 12/13 = a FIXED-GAIN playback tap (observed
-			 * 2026-08-25: the playback echoes there at ~-27 dB,
-			 * independent of the output masters - NOT the output
-			 * bus; the ADAT/SPDIF range is words 6-11 only).  The
-			 * device words 4/5 are a fixed marker, not audio -
-			 * skipped.  At 96/192 kHz the frame has fewer words;
-			 * missing ones read as zero.
+			/* Channel map: app ch0-3 = words 0-3 (AN1-4);
+			 * app ch4-9 = words 6-11 (ADAT3-8); app ch10/11
+			 * = words 4/5 (AS1/2).  The AS1/2 placement was
+			 * confirmed live on 2026-10-17 with the device's
+			 * own loopback: a tone on the AS1/2 output bus
+			 * appeared on app ch10/11 with the map above. The
+			 * old "words 4/5 are a fixed marker" note was
+			 * wrong.  Words 12/13 (the old playback echo tap)
+			 * are no longer exposed: the PCM keeps its 12
+			 * channels, now all hardware inputs.  At 96/192
+			 * kHz the frame has fewer words; missing ones read
+			 * as zero.
 			 */
 			static const u8 map[12] = { 0, 1, 2, 3, 6, 7, 8, 9,
-						   10, 11, 12, 13 };
+						   10, 11, 4, 5 };
 			u8 wi = i < 12 ? map[i] : 0xff;
 			s32 s = 0;
 

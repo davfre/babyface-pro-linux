@@ -880,19 +880,22 @@ frame n : [ch0][ch1][ch2][ch3][ch4][ch5][ch6..ch13]
   (`pkt[28:36]` — parse_usbcap.py/vendor_writes.py are correct).
   Linux raw-URB tools (framedump.c, the kernel driver) have no such
   header and were always aligned.
-- **ch4/ch5 = `20 00 00 00`** (0x20 in byte 0) — a fixed frame marker
-  (the earlier "0x20000000 / constant 32" note was a byte-order
-  misread).
+- **ch4/ch5 = AS1/2 record** — **live loopback 2026-10-17**: a 1 kHz
+  tone on PB1 with the AS1/2 output loopback on showed up on w4/5;
+  with loopback off they were digital zero. The earlier
+  "`20 00 00 00` / fixed frame marker" note was a misread (or an
+  offset artifact) and is superseded.
 - **IN**: record stream channel map (aligned grid, cap_lbcal/cap_lbph/
-  cap_audio 2026-08-26): **w0/1 = the AN1/2 record bus, w2/3 = the
-  PH3/4 record bus** (the Instr 3/4 inputs at idle; the PH3/4 output
-  bus when its loopback is on — the loopback taps the output bus into
-  the record words of the same channel pair, wIdx = 2·out), w4/5 = the
-  fixed marker (NOT meters), w6-13 = ADAT/SPDIF record (0 when
-  disconnected). The mic AN1/AN2 live test (ch0 = AN1, ch1 = AN2,
-  clipped peaks) is consistent; the earlier "ch2/ch3 = AN3/AN4" note
-  was read at the misaligned offset — superseded by cap_lbph (w2/3 =
-  the Phones bus, identical L/R).
+  cap_audio 2026-08-26, revised 2026-10-17): **w0/1 = the AN1/2
+  record bus, w2/3 = the PH3/4 record bus** (the Instr 3/4 inputs at
+  idle; the PH3/4 output bus when its loopback is on — the loopback
+  taps the output bus into the record words of the same channel pair,
+  wIdx = 2·out), **w4/5 = the AS1/2 record bus**, w6-11 = ADAT3-8
+  record, w12/13 = the playback/FX echo tap (not an input; the kernel
+  driver no longer exposes it). The mic AN1/AN2 live test (ch0 = AN1,
+  ch1 = AN2, clipped peaks) is consistent; the earlier "ch2/ch3 =
+  AN3/AN4" note was read at the misaligned offset — superseded by
+  cap_lbph (w2/3 = the Phones bus, identical L/R).
 - **OUT**: ch0/1 = the playback audio (identical on both = duplicated
   mono), ch2-13 = 0 (no signal routed to PB3-12).
 - The 24-bit values follow the audio sample by sample (fast variation) —

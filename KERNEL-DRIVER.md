@@ -58,7 +58,7 @@ libasound_module_pcm_tuxmix.so  ← PipeWire via spa-alsa (sink/source)
 | Controls: pitch, loopback ×6, AN1>2, link, width, FX send, MS | ✅ |
 | Loopback record staging | ✅ NO STAGING NEEDED (2026-08-26): the record is 1:1 with the master on Windows (aligned captures) AND Linux (live, S16 tone: −20 dBFS → −20.0).  The “fixed 2^-5 tap”/×32 were artifacts of mktone.py's broken 4-byte tone (chain ran −48 dB low → record quantizer → coarse square).  ×32 REVERTED; mktone.py → S16 |
 | Front-panel readback (0x17 poll at 50 Hz → read-only button/wheel/IN/OUT/MIX/DIM ALSA controls, babyfacepro-ctl.c) | ✅ hardware-validated 2026-08-26 (all six flash codes + wheel; consume-on-get bug fixed — controls hold the last state) |
-| Multi-channel PCM (2-12 ch, full 14-word frame) | ✅ (12-ch capture + playback verified; marker words skipped) |
+| Multi-channel PCM (2-12 ch, full 14-word frame) | ✅ (12-ch capture + playback verified; capture map revised 2026-10-17: AS1/2 on ch10/11, playback tap dropped) |
 | Default mixer state at probe (playback → all outputs at unity; hardware inputs not routed; analog masters -20 dB, digital 0 dB) | ✅ (inputs-off default 2026-09-28, see "Power-on defaults") |
 | DSP EQ (eq.c): 4 strips × 3-band bell/shelf + low cut, 64-byte bulk coeff blocks on ep 0x0A | ✅ HARDWARE-VALIDATED 2026-08-27 on the mic (bell ±6 dB @ 200 Hz, +6 dB @ 3 kHz, low cut 100/300 Hz on/off; `eq_selftest` ~1 LSB vs the captures). Fixed-point Q27 (CORDIC + exp2, no FPU). NOTE: the loopback taps the record bus POST-EQ, so the input EQ is not measurable on the loopback chain (ear-validated instead) |
 | Preamp state sync from 0x17 readback at probe | ✅ |
@@ -142,16 +142,25 @@ first-impulse method.)  Full sweep `tools/kernel/latency-sweep.sh`:
   or actual software playback instead of an input→output loopback, to
   see whether ch11 tracks the specific looped bus or something more
   global like "whatever's currently on the primary monitor path").
+
+  **FINAL CAPTURE MAP (2026-10-17, live loopback test):** the app
+  channel map is now `{0,1,2,3,6,7,8,9,10,11,4,5}`: ch0-3 = AN1-4,
+  ch4-9 = ADAT3-8 (unchanged), ch10/11 = AS1/2 (device words 4/5).
+  The old playback echo tap (words 12/13) is no longer exposed. The
+  PCM stays at 12 channels and every channel is now a hardware input.
+  Test: a 1 kHz tone on PB1 with the AS1/2 output loopback on lit app
+  ch10/11 at about -45 dBFS; with loopback off ch10/11 read -120 dBFS
+  (no tap left). The same test on ADAT3/4 lit ch4/5. The earlier
+  "words 4/5 are a fixed marker" note was wrong.
+
 2. **Multi-channel PCM** — DONE (see the status table above:
-   `channels_max = 12`, 12-ch capture + playback hardware-verified,
-   marker words skipped). This entry was stale — left listed as an
-   open gap for a while after the table above had already marked it
-   done, caught 2026-09-07 while cross-checking the two against each
-   other. Originally described as "the full 14-channel frame"; what
-   actually shipped is 12 (AN1-4 + the 8 ADAT words) — SPDIF isn't a
-   separately addressable pair of PCM channels in the captured
-   protocol, so 12 is the real ceiling here, not a shortfall against
-   14.
+   `channels_max = 12`, 12-ch capture + playback hardware-verified).
+   This entry was stale — left listed as an open gap for a while after
+   the table above had already marked it done, caught 2026-09-07 while
+   cross-checking the two against each other. Originally described as
+   "the full 14-channel frame"; what actually shipped is 12, and since
+   2026-10-17 those 12 are all hardware inputs (AN1-4 + ADAT3-8 +
+   AS1/2), with the playback echo tap dropped.
 3. **Full control set**: crosspoints (the TotalMix matrix ~hundreds of
    controls), EQ bulk uploads (0x0A), pitch/varispeed (0x1B DDS quads),
    loopback/MS/AN1>2/width flags — ALL DONE. **2026-09-06: the
