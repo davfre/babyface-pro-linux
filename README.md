@@ -25,9 +25,11 @@ The proprietary mode runs the PCM stream on interrupt endpoints (interface 5) an
 The card works like any other ALSA / PipeWire device once loaded.
 
 ```sh
-# DKMS (recommended — survives kernel upgrades). Arch/CachyOS:
+# Arch/CachyOS, from the AUR (DKMS, survives kernel upgrades):
+paru -S snd-usb-babyface-pro-dkms
+# or build the AUR packaging from this tree:
 cd aur/snd-usb-babyface-pro-dkms && makepkg -si
-# ...or any distro with dkms installed (dkms.conf ships in tools/kernel/):
+# or, on any distro with dkms installed (dkms.conf ships in tools/kernel/):
 sudo cp -r tools/kernel /usr/src/snd-usb-babyface-pro-0.1.0
 sudo dkms add    -m snd-usb-babyface-pro -v 0.1.0
 sudo dkms install -m snd-usb-babyface-pro -v 0.1.0
