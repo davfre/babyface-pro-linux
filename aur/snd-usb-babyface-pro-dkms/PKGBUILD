@@ -7,12 +7,6 @@
 # still need the matching *-headers package installed for your kernel
 # (linux-headers, linux-lts-headers, linux-cachyos-headers, ...).
 #
-# NOT PUBLISHABLE AS-IS: the source URL below resolves only once a
-# matching git tag exists upstream (there is none yet - `git tag v0.1.0`
-# and push it first). sha256sums is a SKIP placeholder for the same
-# reason; replace it with the real checksum of the tagged tarball, since
-# the AUR guidelines want release tarballs verified.
-#
 # When a new version is tagged on GitHub, update pkgver and the source
 # tarball checksum below.
 
@@ -28,7 +22,7 @@ optdepends=(
     'linux-headers: build against the stock kernel'
 )
 source=("${url}/archive/v${pkgver}/babyface-pro-linux-${pkgver}.tar.gz")
-sha256sums=('SKIP')
+sha256sums=('583f9d8c3c097b17ff95e79643fbacc57e9998699081b58c680889afbc14b676')
 
 package() {
     cd "${srcdir}/babyface-pro-linux-${pkgver}"
