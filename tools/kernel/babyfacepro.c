@@ -113,18 +113,21 @@ int bf_vendor_read(struct snd_usb_babyface *chip, u8 req, u16 idx, u8 *buf)
 /* Composes and sends the BF_REG_KEEPALIVE_SETTINGS word from every
  * currently-tracked flag together (PROTOCOL.md: "keepalive 0x10 0x05CF
  * wVal = host settings-state register" - a single shared word, not
- * independent per-setting writes).  Only clock source is tracked so
- * far; the single call site this replaces (which used to hardcode
- * 0x0001, i.e. "always Internal") is why this exists as its own
+ * independent per-setting writes).  Clock source and Optical Out format
+ * are tracked today; the single call site this replaces (which used to
+ * hardcode 0x0001, i.e. "always Internal") is why this exists as its own
  * function rather than an inline write at each call site - the next
- * flag added to this word (EQ for Record / Optical-Out SPDIF, this
- * driver's own upstream follow-up list) just OR's in here too, instead
- * of every caller needing to remember every other bit.
+ * flag added to this word (EQ for Record, this driver's own upstream
+ * follow-up list) just OR's in here too, instead of every caller needing
+ * to remember every other bit.
  */
 int bf_settings_write(struct snd_usb_babyface *chip)
 {
 	u16 w = chip->clock_optical ? BF_SETTINGS_CLOCK_OPTICAL :
 				       BF_SETTINGS_CLOCK_INTERNAL;
+
+	if (chip->optical_spdif)
+		w |= BF_SETTINGS_OPTICAL_SPDIF;
 
 	return bf_vendor_write(chip, BF_REQ_KEEPALIVE, w,
 			       BF_REG_KEEPALIVE_SETTINGS);
@@ -225,6 +228,7 @@ int bf_vendor_write_cycle(struct snd_usb_babyface *chip, u8 req, u16 val, u16 id
 int bf_cold_init(struct snd_usb_babyface *chip)
 {
 	const struct bf_rate *r;
+	u16 w;
 	int ret, i;
 
 	for (i = 0; i <= 0x3d; i++) {
@@ -257,10 +261,12 @@ int bf_cold_init(struct snd_usb_babyface *chip)
 	r = bf_rate_lookup(chip->rate);
 	if (!r)
 		return -EINVAL;
-	ret = bf_vendor_write(chip, BF_REQ_KEEPALIVE,
-			      (bf_rate_family(r) << 4) |
-			      (chip->clock_optical ? BF_SETTINGS_CLOCK_OPTICAL :
-						     BF_SETTINGS_CLOCK_INTERNAL),
+	w = (bf_rate_family(r) << 4) |
+	    (chip->clock_optical ? BF_SETTINGS_CLOCK_OPTICAL :
+				   BF_SETTINGS_CLOCK_INTERNAL);
+	if (chip->optical_spdif)
+		w |= BF_SETTINGS_OPTICAL_SPDIF;
+	ret = bf_vendor_write(chip, BF_REQ_KEEPALIVE, w,
 			      BF_REG_KEEPALIVE_INIT);
 	if (ret < 0)
 		return ret;

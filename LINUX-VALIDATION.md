@@ -219,6 +219,11 @@ routing/mute change; restore with 0x2000.
 These are the same keepalive register as step 4 — set all bits at once
 (e.g. clock Optical + EQ-record = `0x0045`).
 
+The driver exposes the Optical Out bit as the `Optical Out Format` enum
+(`ADAT` / `S/PDIF`), defaulting to ADAT. It is composed into every
+keepalive write alongside the clock bit, so a clock or pitch change no
+longer reverts it.
+
 ## 8. Session persistence — does the CARD store the gains? (2026-08-23)
 
 **ANSWER (2026-08-23, manual + UI): NO DSP memory.** The Babyface Pro

@@ -1182,6 +1182,52 @@ out:
 	return ret;
 }
 
+/* Optical Out format: bit 10 of the same BF_REG_KEEPALIVE_SETTINGS
+ * word (PROTOCOL.md, LINUX-VALIDATION.md section 7).  The single optical
+ * port carries ADAT by default; S/PDIF mode uses only AS1/2.  Like the
+ * clock source, this is not a register write of its own.
+ */
+static const char *const bf_optical_texts[] = {
+	"ADAT", "S/PDIF", NULL
+};
+
+static int bf_optical_info(struct snd_kcontrol *kctl,
+			   struct snd_ctl_elem_info *uinfo)
+{
+	return snd_ctl_enum_info(uinfo, 1, 2, bf_optical_texts);
+}
+
+static int bf_optical_get(struct snd_kcontrol *kctl,
+			  struct snd_ctl_elem_value *ucontrol)
+{
+	struct snd_usb_babyface *chip = snd_kcontrol_chip(kctl);
+
+	ucontrol->value.enumerated.item[0] = chip->optical_spdif ? 1 : 0;
+	return 0;
+}
+
+static int bf_optical_put(struct snd_kcontrol *kctl,
+			  struct snd_ctl_elem_value *ucontrol)
+{
+	struct snd_usb_babyface *chip = snd_kcontrol_chip(kctl);
+	bool spdif = ucontrol->value.enumerated.item[0] != 0;
+	int ret = 0;
+
+	mutex_lock(&chip->mutex);
+	if (spdif == chip->optical_spdif)
+		goto out;
+	chip->optical_spdif = spdif;
+	ret = bf_settings_write(chip);
+	if (ret < 0) {
+		chip->optical_spdif = !spdif;
+		goto out;
+	}
+	ret = 1;
+out:
+	mutex_unlock(&chip->mutex);
+	return ret;
+}
+
 static int bf_link_get(struct snd_kcontrol *kctl,
 		       struct snd_ctl_elem_value *ucontrol)
 {
@@ -1558,6 +1604,17 @@ int babyface_create_flags(struct snd_usb_babyface *chip)
 		.info = bf_clock_info,
 		.get = bf_clock_get,
 		.put = bf_clock_put,
+	}, chip);
+	err = snd_ctl_add(chip->card, kctl);
+	if (err < 0)
+		return err;
+
+	kctl = snd_ctl_new1(&(struct snd_kcontrol_new){
+		.iface = SNDRV_CTL_ELEM_IFACE_MIXER,
+		.name = "Optical Out Format",
+		.info = bf_optical_info,
+		.get = bf_optical_get,
+		.put = bf_optical_put,
 	}, chip);
 	err = snd_ctl_add(chip->card, kctl);
 	if (err < 0)

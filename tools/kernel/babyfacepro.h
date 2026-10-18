@@ -164,14 +164,15 @@
  * keepalive (PROTOCOL.md "keepalive 0x10 0x05CF wVal = host settings-
  * state register", hardware-verified 2026-08-22/23): clock source is
  * NOT a register write at all, only this flag word changes.  Bit 2 =
- * clock Optical (bit clear = Internal, the default); bits 6/10 (EQ for
- * Record / Optical-Out SPDIF) are next in the driver's own upstream
- * follow-up list, not wired to a control yet - the composer below only
- * OR's in the clock bit today, structured so those can be added the
- * same way later without another flag-stomping rewrite.
+ * clock Optical (bit clear = Internal, the default); bit 10 = Optical-Out
+ * S/PDIF (bit clear = ADAT, the default).  Bit 6 (EQ for Record) is next
+ * in the driver's own upstream follow-up list, not wired to a control
+ * yet - the composer below OR's in every tracked bit, structured so that
+ * one can be added the same way without another flag-stomping rewrite.
  */
 #define BF_SETTINGS_CLOCK_INTERNAL	0x0001
 #define BF_SETTINGS_CLOCK_OPTICAL	0x0004
+#define BF_SETTINGS_OPTICAL_SPDIF	0x0400
 
 /* The "cross" register block within each output: the L-registers sit at
  * odd offsets 5..23 and the R-registers at even offsets 4..22 (the stereo
@@ -428,6 +429,7 @@ struct snd_usb_babyface {
 	bool linked;			/* AN1/2 input link */
 	bool ms_proc;			/* MS processor engaged */
 	bool clock_optical;		/* clock source: false = Internal (default) */
+	bool optical_spdif;		/* Optical Out: false = ADAT (default) */
 	int ref_level;			/* Instr 3/4 ref level, one of the
 					 * BF_REF_LEVEL_* values
 					 * (0 = +4dBu, the default)

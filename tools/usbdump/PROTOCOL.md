@@ -654,8 +654,9 @@ readback. On Linux: keepalive `0x10 0x0004 0x05CF` = Optical,
 0x80 immediately and sustained; back to 0x0001 → 0x40. Exact.
 
 Other keepalive flag bits seen (cap_fus2, during the settings phase):
-`0x0401` and `0x0041` — believed to be the Optical-Out format
-(ADAT/SPDIF) select, unconfirmed (the Optical-Out capture is pending).
+`0x0401` and `0x0041` - the Optical-Out format (ADAT/SPDIF) select and
+EQ for Record. Both are confirmed by dedicated captures (cap_opt and
+cap_eqr, see the table below).
 
 ### The keepalive `0x10 0x05CF` wVal = host settings-state register (FULLY DECODED 2026-08-22)
 

@@ -174,6 +174,11 @@ first-impulse method.)  Full sweep `tools/kernel/latency-sweep.sh`:
      composed from tracked state now (`bf_settings_write`), or Optical
      would have silently reverted on the next pitch change or PM
      resume.
+   - **Optical Out format** (`Optical Out Format` enum, ADAT/S/PDIF) -
+     bit 10 of the same keepalive word. ADAT is the default, matching
+     the previous hardcoded behavior; S/PDIF carries only AS1/2 on the
+     fibre. The front-panel OUT=Opt wheel mapping in S/PDIF mode is not
+     verified yet (the driver currently moves ADAT7/8 either way).
    - **Ref level** (`Instrument Ref Level` enum, +4dBu/-10dBV/Boost) —
      a single shared switch for the Instrument pair, not per-channel
      (no separate bits exist for IN3 vs IN4). Boost's distinguishing
