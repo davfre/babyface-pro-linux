@@ -514,6 +514,12 @@ reply yet.  Open follow-ups for a v7, once Takashi has reacted:
   alsactl, reset_resume), issue #21 (playback clamp breaks dmix), issue #22
   (output masters counted in the 8-bit register's 0.5 dB steps, no log table).
   They answer v1/v2 remarks that were never answered on the list.
+  Status 2026-10-18: #19, #20 and #24 (the #22 fix) are merged on main;
+  #21 is tested on both the original Pro and the Pro FS but still waits for
+  David's sign-off.
+- The `Optical Out Format` control (issue #12, commit 051a996 on main) is new
+  since v6 and needs a home in the v7 split, most likely with the routing
+  flags control or as its own small control patch.
 - #20 removes the `panel_sel` copy across re-probes: check that a stale
   alsactl value for SELECT cannot make SET toggle the wrong 48V.
 
