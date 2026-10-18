@@ -3,8 +3,10 @@
 #
 # Sweeps every sample rate x period (>= the current frames_per_urb floor)
 # in full-duplex with tools/kernel/pcmxrun.c: xruns on both streams must be
-# 0, and (alt-1 rates) the device playback-tap on capture ch10/11 must
-# carry the tone (signal integrity without a mic).  Then a runtime
+# 0, and (alt-1 rates) the AS1/2 loopback on capture ch10/11 must carry the
+# tone (signal integrity without a mic).  The 2026-10-17 capture map puts
+# AS1/2 on ch10/11; the old fixed playback tap there is gone, so the sweep
+# enables the AS1/2 loopback and restores its previous state afterwards.
 # period/buffer renegotiation inside one PCM session (pcmreneg.c, the
 # issue-#5 shape), a start/stop stress loop (open/arm/kill/close) and,
 # with --mixer-restore, a check that the host-side mixer cache survives
@@ -93,6 +95,16 @@ if ! free_device; then
 	exit 1
 fi
 
+# The old fixed playback tap on capture ch10/11 is gone: the capture map
+# puts AS1/2 there.  Enable the AS1/2 output loopback so the playback tone
+# reaches those channels for the tap checks, and restore the previous
+# loopback state when they are done.
+LB_AS12=$(amixer -c "$CARD" controls | awk -F'[ ,]' '/Loopback Switch/ && /index=2/ {print $1}' | head -1)
+LB_BEFORE=$(amixer -c "$CARD" cget "$LB_AS12" 2>/dev/null | sed -n 's/.*values=//p' | tail -1)
+if [ -n "$LB_AS12" ]; then
+	amixer -c "$CARD" cset "$LB_AS12" on >/dev/null || LB_AS12=""
+fi
+
 # --- PCM sweep ------------------------------------------------------------
 # Period floor for the invariant: period >= max(fpu, 32).  period 16
 # (buffer 32) is the absolute minimum but shows rare xruns even at 48 kHz
@@ -158,6 +170,10 @@ if "$RBIN" "$CARD" 48000 $RCONF; then
 else
 	FAIL=$((FAIL + 1)); FAILED="$FAILED renegotiation"
 	echo "  FAIL  runtime renegotiation"
+fi
+
+if [ -n "$LB_AS12" ]; then
+	amixer -c "$CARD" cset "$LB_AS12" "${LB_BEFORE:-off}" >/dev/null
 fi
 
 # --- start/stop stress ----------------------------------------------------

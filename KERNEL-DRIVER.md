@@ -338,9 +338,13 @@ first-impulse method.)  Full sweep `tools/kernel/latency-sweep.sh`:
    --disconnect-test`), covering the 9 rates x 4 periods sweep, 30
    start/stop cycles, mixer-cache restore across unbind/rebind and a
    mid-stream disconnect.
+   **2026-10-18: with the AS1/2 capture map, the tap check now uses the
+   AS1/2 loopback. The same command reports 41 pass / 0 fail / 0 skipped
+   with the module that adds the Optical Out control.**
    What it does: full-duplex sweep (9 rates × periods ≥
-   max(fpu,32)) with a mic-free signal-integrity check (the device
-   playback-tap on capture ch10/11), start/stop stress, and
+   max(fpu,32)) with a mic-free signal-integrity check (the AS1/2
+   loopback on capture ch10/11, where the 2026-10-17 map puts AS1/2;
+   the old fixed playback tap is gone), start/stop stress, and
    --mixer-restore (48V+gain survive unbind/rebind).  It caught two
    real driver bugs, both fixed: (a) playback overrunning the app ring
    at small buffers (hw_ptr past appl_ptr → spurious XRUN) — the copy
