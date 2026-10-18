@@ -30,9 +30,9 @@ paru -S snd-usb-babyface-pro-dkms
 # or build the AUR packaging from this tree:
 cd aur/snd-usb-babyface-pro-dkms && makepkg -si
 # or, on any distro with dkms installed (dkms.conf ships in tools/kernel/):
-sudo cp -r tools/kernel /usr/src/snd-usb-babyface-pro-0.1.0
-sudo dkms add    -m snd-usb-babyface-pro -v 0.1.0
-sudo dkms install -m snd-usb-babyface-pro -v 0.1.0
+sudo cp -r tools/kernel /usr/src/snd-usb-babyface-pro-0.1.1
+sudo dkms add    -m snd-usb-babyface-pro -v 0.1.1
+sudo dkms install -m snd-usb-babyface-pro -v 0.1.1
 sudo modprobe snd-usb-babyface-pro
 ```
 
