@@ -1015,18 +1015,18 @@ period comparison, for two reasons found while reading them:
    error, and the writer thread stops on it. Reproduced in seconds with
    the default module (no reload), by freezing the probe for 150 ms
    mid-stream (`kill -STOP`/`-CONT`): in mmap access, at period 32 and
-   64 alike, playback recovery (`snd_pcm_prepare()` then
-   `snd_pcm_start()` on an EMPTY buffer while capture keeps running)
-   leaves the playback pointer frozen; the probe's mmap loop then sees
-   avail == 0 for 6 s and gives up with -ETIMEDOUT ("write: Connection
-   timed out"). In read/write access (`snd_pcm_writei()`, which starts
-   at the start threshold, i.e. after data is queued) recovery works.
-   Priming one period of silence before `snd_pcm_start()` (what
-   PipeWire does on recovery) also makes mmap recovery work (err=0 at 32
-   and 64). So real sound servers are not affected, but the driver has a
-   defect: starting an empty playback stream must either run or report
-   an xrun, never freeze the pointer. **Open, to investigate on the
-   driver side** (not in the v6 series; it is a follow-up fix).
+   64 alike, the probe's recovery (`snd_pcm_prepare()` then
+   `snd_pcm_start()` on an EMPTY buffer) never restarted playback, and
+   its mmap loop gave up after 6 s with -ETIMEDOUT ("write: Connection
+   timed out"). **Not a driver bug** (first written up here as one, then
+   checked): the ALSA core refuses to start an empty playback stream
+   (`snd_pcm_pre_start()` returns -EPIPE when `snd_pcm_playback_data()`
+   is false, `sound/core/pcm_native.c`), the probe ignored that return,
+   and in mmap access nothing starts the stream later (the start
+   threshold only applies to `snd_pcm_writei()`, which is why read/write
+   access recovered). Priming one period of silence before
+   `snd_pcm_start()`, as PipeWire does, recovers (err=0 at 32 and 64);
+   `pcmxrun.c` now does that and checks the start.
 2. **The probe ran at normal scheduling priority**, while PipeWire and
    JACK run real-time threads; sub-millisecond periods are expected to
    xrun under desktop load at SCHED_OTHER. The 16-vs-24 counts (24 worse

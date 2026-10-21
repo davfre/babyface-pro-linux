@@ -125,7 +125,19 @@ static void *writer_thread(void *arg)
 			if (w == -EPIPE) {
 				pb_xruns++;
 				snd_pcm_prepare(pb);
-				snd_pcm_start(pb);
+				/* The core refuses to start an empty playback
+				 * stream (-EPIPE), and in mmap access nothing
+				 * starts it later: queue one period of silence
+				 * first, the way PipeWire recovers.
+				 */
+				memset(chunk, 0, period * pb_ch * sizeof(int32_t));
+				xwrite(pb, chunk, period, pb_ch);
+				if (snd_pcm_state(pb) == SND_PCM_STATE_PREPARED &&
+				    snd_pcm_start(pb) < 0) {
+					fprintf(stderr, "restart: playback did not start\n");
+					err_count++;
+					break;
+				}
 				continue;
 			}
 			fprintf(stderr, "write: %s\n", snd_strerror(w));
