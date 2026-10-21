@@ -1057,3 +1057,12 @@ period floor. The September finding that 16 drops capture buffers every
 recording-safe is now a system-tuning question (CPU frequency governor,
 IRQ threading, USB controller interrupts), which a longer, repeated soak
 would quantify; 8 still loses capture buffers (30 s run above).
+
+**Update (same day):** "through PipeWire the card currently runs the
+256-frame periods pinned by `wireplumber-rme.conf`" (above) no longer
+holds. The rule (TuxMix repo, `tools/alsa/wireplumber-rme.conf`) now
+keeps IRQ scheduling but no longer pins `api.alsa.period-size`, and the
+card follows the PipeWire quantum: checked on the card at the default
+quantum 64, period 64 / buffer 192 both ways, 0 xrun. Timer-based
+scheduling still stop/start-loops intermittently, so
+`api.alsa.disable-tsched = true` stays.
