@@ -963,3 +963,43 @@ arecord -t raw -D hw:3,0 -f S32_LE -c 2 -r 48000 -d 3 /tmp/cap.raw
 The user-space TuxMix stays the reference/validation suite forever
 (everything was validated on real hardware — the kernel driver must
 reproduce the same writes, verifiable against PROTOCOL.md).
+
+## 2026-10-21 — low-period xrun bench, re-measured
+
+First low-latency measurement since the September soaks. Silent copy of
+`tools/kernel/pcmxrun.c` (amplitude 0, so nothing reaches the monitors;
+the `tap_rms` check therefore reads -inf and prints FAIL, which is
+expected and not a stream failure), 48 kHz, full duplex, mmap access,
+12 playback channels (`PCMX_MMAP=1 PCMX_PBCH=12`, the PipeWire Pro Audio
+shape), buffer = 2 periods, playback and capture on separate threads.
+Kernel 7.2.9-2-cachyos, DKMS module, normal desktop load (~1.0).
+
+Default module (`frames_per_urb=256 urb_frames_min=32 nurbs=8`),
+RME PipeWire nodes destroyed to free hw:0,0, 30 s per point:
+
+| period | per period | pb xruns | cap xruns |
+|---|---|---|---|
+| 128 | 2.67 ms | 0 | 0 |
+| 96 | 2.00 ms | 0 | 0 |
+| 64 | 1.33 ms | 0 | 0 |
+| 48 | 1.00 ms | 0 | 0 |
+| 32 | 0.67 ms | 0 | 0 |
+
+Reloaded with `urb_frames_min=8 nurbs=16` (sound server stopped for the
+unload; module defaults and the session restored and checked afterwards):
+
+| period | per period | duration | pb xruns | cap xruns |
+|---|---|---|---|---|
+| 32 | 0.67 ms | 60 s | 0 | 0 |
+| 24 | 0.50 ms | 60 s | 0 | 0 |
+| 16 | 0.33 ms | 60 s | 0 | 0 |
+| 8 | 0.17 ms | 30 s | 0 | 2 |
+
+Better than September at 16: then (`frames_per_urb=16 nurbs=16`, fixed
+16-frame URBs) capture dropped about one buffer every 7 s; now the URB
+follows the period down to `urb_frames_min` and 60 s at period 16 ran
+clean both ways. Period 8 still loses capture buffers. A 60 s run is not
+the 5-minute soak of September: a longer soak at 16/24 would be needed
+before calling 16 recording-safe. These are raw ALSA numbers; through
+PipeWire the card currently runs the 256-frame periods pinned by
+`wireplumber-rme.conf`, whatever the quantum.
