@@ -1066,3 +1066,6 @@ card follows the PipeWire quantum: checked on the card at the default
 quantum 64, period 64 / buffer 192 both ways, 0 xrun. Timer-based
 scheduling still stop/start-loops intermittently, so
 `api.alsa.disable-tsched = true` stays.
+Later the same day the rule gained `node.latency = "256/48000"`: the card
+now defaults to 256 frames (5.33 ms) and goes lower only when a client
+asks (measured: 128 -> 128, 64 -> 64, 4096 -> 256, 0 xrun).
