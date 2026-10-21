@@ -1003,3 +1003,34 @@ the 5-minute soak of September: a longer soak at 16/24 would be needed
 before calling 16 recording-safe. These are raw ALSA numbers; through
 PipeWire the card currently runs the 256-frame periods pinned by
 `wireplumber-rme.conf`, whatever the quantum.
+
+### 2026-10-21 (later) — 10-minute soaks, and a playback restart that hangs
+
+10-minute soaks with the module reloaded `urb_frames_min=8 nurbs=16`
+(same silent mmap/12-ch setup): period 16 -> pb_xruns=1 cap_xruns=3
+err=1; period 24 -> pb_xruns=1 cap_xruns=12 err=1. Not usable as a
+period comparison, for two reasons found while reading them:
+
+1. **The probe's playback died after its first xrun.** `err=1` is a hard
+   error, and the writer thread stops on it. Reproduced in seconds with
+   the default module (no reload), by freezing the probe for 150 ms
+   mid-stream (`kill -STOP`/`-CONT`): in mmap access, at period 32 and
+   64 alike, playback recovery (`snd_pcm_prepare()` then
+   `snd_pcm_start()` on an EMPTY buffer while capture keeps running)
+   leaves the playback pointer frozen; the probe's mmap loop then sees
+   avail == 0 for 6 s and gives up with -ETIMEDOUT ("write: Connection
+   timed out"). In read/write access (`snd_pcm_writei()`, which starts
+   at the start threshold, i.e. after data is queued) recovery works.
+   Priming one period of silence before `snd_pcm_start()` (what
+   PipeWire does on recovery) also makes mmap recovery work (err=0 at 32
+   and 64). So real sound servers are not affected, but the driver has a
+   defect: starting an empty playback stream must either run or report
+   an xrun, never freeze the pointer. **Open, to investigate on the
+   driver side** (not in the v6 series; it is a follow-up fix).
+2. **The probe ran at normal scheduling priority**, while PipeWire and
+   JACK run real-time threads; sub-millisecond periods are expected to
+   xrun under desktop load at SCHED_OTHER. The 16-vs-24 counts (24 worse
+   than 16) look like scheduling noise, not a period effect.
+
+A valid soak needs the primed recovery and `chrt -f 70`, with a period-32
+baseline in the same run.
