@@ -1034,3 +1034,26 @@ period comparison, for two reasons found while reading them:
 
 A valid soak needs the primed recovery and `chrt -f 70`, with a period-32
 baseline in the same run.
+
+### 2026-10-21 (later) — real-time soaks, the valid run
+
+Same setup with the two fixes above: the probe primes one period of
+silence before restarting playback after an xrun (as PipeWire does), and
+runs at `chrt -f 70`. Module reloaded `urb_frames_min=8 nurbs=16`, 48 kHz,
+mmap, 12-ch playback, buffer = 2 periods, 10 minutes per point, one run:
+
+| period | per period | pb xruns | cap xruns | hard errors |
+|---|---|---|---|---|
+| 32 | 0.67 ms | 2 | 3 | 0 |
+| 24 | 0.50 ms | 0 | 0 | 0 |
+| 16 | 0.33 ms | 0 | 1 | 0 |
+
+Every xrun recovered (no hard error). The counts do not grow as the
+period shrinks: the period-32 baseline, run first, had the most. Read as:
+from 32 down to 16 the driver streams cleanly, and the few xruns left
+(0 to 5 per 10 minutes) are occasional system latency events, not a
+period floor. The September finding that 16 drops capture buffers every
+~7 s no longer holds with URBs that follow the period. Making 16 or 24
+recording-safe is now a system-tuning question (CPU frequency governor,
+IRQ threading, USB controller interrupts), which a longer, repeated soak
+would quantify; 8 still loses capture buffers (30 s run above).
